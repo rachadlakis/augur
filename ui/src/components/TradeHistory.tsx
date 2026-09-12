@@ -1,5 +1,5 @@
 import React from 'react'
-import { Trade } from '../App'
+import { Trade } from '../types'
 import './TradeHistory.css'
 
 interface Props {

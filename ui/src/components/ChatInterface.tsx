@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react'
 import './ChatInterface.css'
+// Component doesn't need to import types
 
 interface Message {
   id: string

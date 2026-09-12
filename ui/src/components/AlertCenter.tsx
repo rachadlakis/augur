@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Alert } from '../App'
+import { Alert } from '../types'
 import './AlertCenter.css'
 
 interface Props {

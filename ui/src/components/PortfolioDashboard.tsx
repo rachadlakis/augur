@@ -1,10 +1,10 @@
 import React from 'react'
-import { PortfolioState, Position } from '../App'
+import { PortfolioState, Position } from '../types'
 import './PortfolioDashboard.css'
 
 interface Props {
   portfolio: PortfolioState
-  onAction: (action: string, symbol: string, params?: Record<string, unknown>) => void
+  onAction: (symbol: string) => void
 }
 
 export const PortfolioDashboard: React.FC<Props> = ({ portfolio, onAction }) => {
@@ -87,7 +87,7 @@ export const PortfolioDashboard: React.FC<Props> = ({ portfolio, onAction }) => 
                   <td className="actions">
                     <button
                       className="btn btn-small btn-danger"
-                      onClick={() => onAction('CLOSE_POSITION', pos.symbol)}
+                      onClick={() => onAction(pos.symbol)}
                       title="Close this position"
                     >
                       Close

@@ -4,55 +4,7 @@ import { PortfolioDashboard } from './components/PortfolioDashboard'
 import { TradeHistory } from './components/TradeHistory'
 import { ChatInterface } from './components/ChatInterface'
 import { AlertCenter } from './components/AlertCenter'
-
-// Type definitions
-interface Position {
-  symbol: string
-  quantity: number
-  entry_price: number
-  current_price: number
-  unrealized_pnl: number
-  unrealized_pnl_pct: number
-  side: string
-  thesis_valid: boolean
-  stop_price?: number
-  target_price?: number
-}
-
-interface Trade {
-  trade_id: string
-  symbol: string
-  entry_price: number
-  exit_price: number
-  quantity: number
-  side: string
-  pnl: number
-  pnl_pct: number
-  entry_time: string
-  exit_time: string
-  thesis_status: string
-  analysis_tags: string[]
-}
-
-interface Alert {
-  alert_type: string
-  symbol?: string
-  message: string
-  severity: string
-  timestamp: string
-}
-
-interface PortfolioState {
-  account_equity: number
-  cash: number
-  buying_power: number
-  total_pnl: number
-  total_pnl_pct: number
-  max_drawdown: number
-  positions: Position[]
-  recent_trades: Trade[]
-  timestamp: string
-}
+import { Position, Trade, Alert, PortfolioState } from './types'
 
 function App() {
   const [portfolio, setPortfolio] = useState<PortfolioState>({
@@ -68,7 +20,7 @@ function App() {
   })
 
   const [alerts, setAlerts] = useState<Alert[]>([])
-  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected' | 'connecting'>('disconnecting')
+  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected' | 'connecting'>('disconnected')
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
@@ -231,28 +183,10 @@ function App() {
   }
 
   return (
-    <div className="app">
-      <header className="app-header">
-        <h1>📊 Augur Trading Dashboard</h1>
-        <div className="connection-status">
-          <span className={`status-indicator ${connectionStatus}`}></span>
-          {connectionStatus === 'connected' && 'Connected'}
-          {connectionStatus === 'connecting' && 'Connecting...'}
-          {connectionStatus === 'disconnected' && 'Disconnected'}
-        </div>
-      </header>
-
-      <div className="app-layout">
-        <div className="left-panel">
-          <PortfolioDashboard portfolio={portfolio} onAction={handlePositionClose} />
-          <TradeHistory trades={portfolio.recent_trades} />
-        </div>
-
-        <div className="right-panel">
-          <ChatInterface onSendCommand={handleSendCommand} />
-          <AlertCenter alerts={alerts} />
-        </div>
-      </div>
+    <div style={{ padding: '20px', backgroundColor: '#0f172a', color: '#f1f5f9', minHeight: '100vh', fontFamily: 'Arial, sans-serif' }}>
+      <h1>Testing: Augur Trading Dashboard</h1>
+      <p>Status: {connectionStatus}</p>
+      <p>Account Equity: ${portfolio.account_equity}</p>
     </div>
   )
 }
