@@ -159,6 +159,8 @@ class TradingState:
                 'entry_time': datetime.now().isoformat(),
             }
             logger.info(f"Added position: {symbol} {quantity} @ {entry_price}")
+            # Recalculate account equity
+            self._calculate_account_equity()
     
     async def update_position_price(self, symbol: str, current_price: float):
         """Update position current price and P&L"""
@@ -174,6 +176,27 @@ class TradingState:
                     pos['pnl'] = (pos['entry_price'] - current_price) * pos['quantity']
                 
                 pos['pnl_pct'] = (pos['pnl'] / (pos['entry_price'] * pos['quantity'])) * 100 if pos['entry_price'] > 0 else 0.0
+                
+                # Recalculate total account equity (called within lock, so _calculate_account_equity won't deadlock)
+                self._calculate_account_equity()
+    
+    def _calculate_account_equity(self):
+        """Calculate total account equity from positions"""
+        # Sum of all position values at current prices
+        positions_value = sum(
+            pos['quantity'] * pos['current_price'] 
+            for pos in self.positions.values()
+        )
+        # Total P&L from positions
+        total_pnl = sum(pos['pnl'] for pos in self.positions.values())
+        # Account equity = initial capital + total P&L
+        new_equity = self.initial_equity + total_pnl
+        
+        # Only update history if equity changed significantly
+        if not self.equity_history or abs(new_equity - self.equity_history[-1]) > 0.01:
+            self.equity_history.append(new_equity)
+        
+        self.account_equity = new_equity
     
     async def close_position(self, symbol: str, exit_price: float, reason: str = "manual_close") -> Dict[str, Any]:
         """Close a position"""
@@ -691,8 +714,18 @@ async def simulate_market_data():
                     # Simulate random price movement (±0.5%)
                     change = random.uniform(-0.005, 0.005)
                     new_price = pos['current_price'] * (1 + change)
+                    pos['current_price'] = new_price
                     
-                    await trading_state.update_position_price(symbol, new_price)
+                    # Calculate P&L
+                    if pos['side'] == 'BUY':
+                        pos['pnl'] = (new_price - pos['entry_price']) * pos['quantity']
+                    else:  # SELL
+                        pos['pnl'] = (pos['entry_price'] - new_price) * pos['quantity']
+                    
+                    pos['pnl_pct'] = (pos['pnl'] / (pos['entry_price'] * pos['quantity'])) * 100 if pos['entry_price'] > 0 else 0.0
+                
+                # Recalculate account equity
+                trading_state._calculate_account_equity()
         
         except Exception as e:
             logger.error(f"Error in market data simulation: {e}")

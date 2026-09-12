@@ -4,6 +4,7 @@ import { PortfolioDashboard } from './components/PortfolioDashboard'
 import { TradeHistory } from './components/TradeHistory'
 import { ChatInterface } from './components/ChatInterface'
 import { AlertCenter } from './components/AlertCenter'
+import { HoldingsDetail } from './components/HoldingsDetail'
 // Inline types - avoiding import from types.ts which seems to cause issues
 interface PortfolioState {
   account_equity: number
@@ -26,6 +27,7 @@ interface Alert {
 }
 
 function App() {
+  const [currentView, setCurrentView] = useState<'dashboard' | 'holdings'>('dashboard')
   const [portfolio, setPortfolio] = useState<PortfolioState>({
     account_equity: 100000,
     cash: 30000,
@@ -157,10 +159,42 @@ function App() {
     handleAction('CLOSE_POSITION', { symbol })
   }
 
+  // Handle conditional rendering
+  if (currentView === 'holdings') {
+    return <HoldingsDetail positions={portfolio.positions} onBack={() => setCurrentView('dashboard')} />
+  }
+
   return (
     <div className="app">
       <header className="app-header">
-        <h1>📊 Augur Trading Dashboard</h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+          <h1>📊 Augur Trading Dashboard</h1>
+          <button
+            onClick={() => setCurrentView('holdings')}
+            style={{
+              background: 'linear-gradient(135deg, #8b5cf6, #6d28d9)',
+              color: 'white',
+              border: 'none',
+              padding: '8px 16px',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '14px',
+              fontWeight: '600',
+              whiteSpace: 'nowrap',
+              transition: 'all 0.3s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'translateY(-2px)'
+              e.currentTarget.style.boxShadow = '0 8px 16px rgba(139, 92, 246, 0.3)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)'
+              e.currentTarget.style.boxShadow = 'none'
+            }}
+          >
+            📈 View Holdings
+          </button>
+        </div>
         <div className="connection-status">
           <span className={`status-indicator ${connectionStatus}`}></span>
           {connectionStatus === 'connected' && 'Connected'}
