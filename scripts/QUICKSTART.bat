@@ -31,14 +31,14 @@ echo.
 echo Open 3 PowerShell/Command Prompt windows and run:
 echo.
 echo Terminal 1 ^(Backend^):
-echo   python dashboard_api.py
+echo   python src\dashboard_api.py
 echo.
 echo Terminal 2 ^(Frontend^):
 echo   cd ui
 echo   npm run dev
 echo.
 echo Terminal 3 ^(Optional - Trading System^):
-echo   python demo_trading_system.py
+echo   python scripts\demo_trading_system.py
 echo.
 
 REM Step 3: Access dashboard
