@@ -24,7 +24,9 @@ from agents.augur_agents.trading.pipeline import TradingPipeline
 from agents.augur_agents.trading.journal import TradeJournal
 from agents.augur_agents.trading.monitor import PositionMonitor
 from agents.augur_agents.contracts import MarketSnapshot
-from config import Settings
+from .config import Settings
+from ..providers.stocks_alpaca import AlpacaProvider
+from .technical_indicators import TechnicalIndicators, SignalDetector, PositionSizer
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +102,30 @@ class Alert(BaseModel):
     timestamp: str
 
 
+class Indicators(BaseModel):
+    """Technical indicators for a symbol"""
+    symbol: str
+    rsi: Optional[float] = None
+    macd: Optional[float] = None
+    macd_signal: Optional[float] = None
+    macd_histogram: Optional[float] = None
+    ma_50: Optional[float] = None
+    ma_100: Optional[float] = None
+    ma_200: Optional[float] = None
+    entry_signal: Optional[str] = None  # "BUY" or None
+    entry_strength: int = 0  # 0-100
+    exit_signal: Optional[str] = None  # "SELL" or None
+    exit_strength: int = 0  # 0-100
+    trend: str = "NEUTRAL"  # "UPTREND", "DOWNTREND", "NEUTRAL"
+
+
+class SignalData(BaseModel):
+    """Signal data with reasons"""
+    signal: Optional[str] = None
+    strength: int
+    reasons: List[str]
+
+
 # ============================================================================
 # FastAPI App Setup
 # ============================================================================
@@ -132,12 +158,22 @@ class TradingState:
         self.journal = TradeJournal()
         self.monitor = PositionMonitor()
         
+        # Initialize Alpaca provider for real account data
+        try:
+            self.alpaca = AlpacaProvider(self.settings)
+            logger.info("Alpaca provider initialized successfully")
+        except Exception as e:
+            logger.warning(f"Could not initialize Alpaca: {e}. Using demo mode.")
+            self.alpaca = None
+        
         # State tracking
         self.account_equity = self.settings.initial_capital
         self.initial_equity = self.settings.initial_capital
         self.equity_history: List[float] = [self.settings.initial_capital]
         self.positions: Dict[str, Dict[str, Any]] = {}  # symbol -> position data
         self.trades: List[Dict[str, Any]] = []  # All completed trades
+        self.price_history: Dict[str, List[float]] = {}  # symbol -> price history (last 100 points)
+        self.indicators: Dict[str, Dict[str, Any]] = {}  # symbol -> current indicators
         self.lock = asyncio.Lock()
         self.last_update = datetime.now()
         
@@ -158,6 +194,8 @@ class TradingState:
                 'target_price': None,
                 'entry_time': datetime.now().isoformat(),
             }
+            # Initialize price history with entry price
+            self.update_price_history(symbol, entry_price)
             logger.info(f"Added position: {symbol} {quantity} @ {entry_price}")
             # Recalculate account equity
             self._calculate_account_equity()
@@ -176,6 +214,12 @@ class TradingState:
                     pos['pnl'] = (pos['entry_price'] - current_price) * pos['quantity']
                 
                 pos['pnl_pct'] = (pos['pnl'] / (pos['entry_price'] * pos['quantity'])) * 100 if pos['entry_price'] > 0 else 0.0
+                
+                # Track price history for indicators
+                self.update_price_history(symbol, current_price)
+                
+                # Calculate indicators
+                self.calculate_indicators(symbol)
                 
                 # Recalculate total account equity (called within lock, so _calculate_account_equity won't deadlock)
                 self._calculate_account_equity()
@@ -263,6 +307,112 @@ class TradingState:
             max_dd = max(max_dd, dd)
         
         return max_dd * 100
+    
+    def update_price_history(self, symbol: str, price: float):
+        """Track price history for indicator calculations (keep last 100 points)"""
+        if symbol not in self.price_history:
+            self.price_history[symbol] = []
+        
+        self.price_history[symbol].append(price)
+        # Keep only last 100 prices for efficiency
+        if len(self.price_history[symbol]) > 100:
+            self.price_history[symbol] = self.price_history[symbol][-100:]
+    
+    def calculate_indicators(self, symbol: str) -> Optional[Dict[str, Any]]:
+        """Calculate technical indicators for a symbol"""
+        if symbol not in self.price_history or len(self.price_history[symbol]) < 30:
+            return None
+        
+        try:
+            prices = self.price_history[symbol]
+            
+            # Calculate indicators
+            rsi = TechnicalIndicators.compute_rsi(prices, 14)
+            macd_line, signal_line, histogram = TechnicalIndicators.compute_macd(prices, 12, 26, 9)
+            ma_50 = TechnicalIndicators.compute_sma(prices, 50)
+            ma_100 = TechnicalIndicators.compute_sma(prices, 100)
+            ma_200 = TechnicalIndicators.compute_sma(prices, 200)
+            
+            # Get current values
+            current_rsi = rsi[-1] if rsi[-1] is not None else None
+            current_macd = macd_line[-1] if macd_line[-1] is not None else None
+            current_signal = signal_line[-1] if signal_line[-1] is not None else None
+            current_histogram = histogram[-1] if histogram[-1] is not None else None
+            current_ma50 = ma_50[-1] if ma_50[-1] is not None else None
+            current_ma100 = ma_100[-1] if ma_100[-1] is not None else None
+            current_ma200 = ma_200[-1] if ma_200[-1] is not None else None
+            
+            # Detect entry/exit signals
+            entry_signal = SignalDetector.detect_entry_signals(prices, rsi, macd_line, signal_line, ma_50, ma_100, ma_200)
+            exit_signal = SignalDetector.detect_exit_signals(prices, rsi, macd_line, signal_line)
+            
+            # Determine trend
+            if current_ma50 and current_ma100 and current_ma200:
+                if current_ma50 > current_ma100 > current_ma200:
+                    trend = "UPTREND"
+                elif current_ma50 < current_ma100 < current_ma200:
+                    trend = "DOWNTREND"
+                else:
+                    trend = "NEUTRAL"
+            else:
+                trend = "NEUTRAL"
+            
+            indicators = {
+                "symbol": symbol,
+                "rsi": current_rsi,
+                "macd": current_macd,
+                "macd_signal": current_signal,
+                "macd_histogram": current_histogram,
+                "ma_50": current_ma50,
+                "ma_100": current_ma100,
+                "ma_200": current_ma200,
+                "entry_signal": entry_signal.get("signal"),
+                "entry_strength": entry_signal.get("strength", 0),
+                "entry_reasons": entry_signal.get("reasons", []),
+                "exit_signal": exit_signal.get("signal"),
+                "exit_strength": exit_signal.get("strength", 0),
+                "exit_reasons": exit_signal.get("reasons", []),
+                "trend": trend,
+            }
+            
+            self.indicators[symbol] = indicators
+            return indicators
+        
+        except Exception as e:
+            logger.error(f"Error calculating indicators for {symbol}: {e}")
+            return None
+    
+    
+    async def load_alpaca_positions(self):
+        """Load real positions from Alpaca account"""
+        if not self.alpaca:
+            logger.info("Alpaca not available, using demo mode")
+            return False
+        
+        try:
+            account = self.alpaca.get_account()
+            logger.info(f"Loaded Alpaca account: equity=${account.equity:.2f}, cash=${account.cash:.2f}")
+            
+            # Update account equity from Alpaca
+            self.account_equity = account.equity
+            self.initial_equity = account.equity
+            self.equity_history = [account.equity]
+            
+            # Load positions from Alpaca
+            if account.positions:
+                logger.info(f"Loading {len(account.positions)} positions from Alpaca")
+                for symbol, qty in account.positions.items():
+                    # For now, use entry price as current price (Alpaca doesn't provide this easily)
+                    # In production, you'd fetch historical data or quotes
+                    await self.add_position(symbol, qty, 100.0, "BUY", f"Imported from Alpaca")
+                return True
+            else:
+                logger.info("No positions in Alpaca account, using demo mode")
+                return False
+        
+        except Exception as e:
+            logger.error(f"Failed to load Alpaca positions: {e}")
+            return False
 
 # Initialize trading state
 trading_state = TradingState()
@@ -376,6 +526,16 @@ async def get_trades(limit: int = 50):
     """Get recent trade history"""
     portfolio = await get_portfolio_snapshot()
     return portfolio.recent_trades[-limit:]
+
+
+@app.get("/api/indicators")
+async def get_indicators():
+    """Get technical indicators for all positions"""
+    indicators_list = []
+    for symbol in trading_state.positions.keys():
+        if symbol in trading_state.indicators:
+            indicators_list.append(trading_state.indicators[symbol])
+    return {"indicators": indicators_list}
 
 
 @app.post("/api/command", response_model=CommandResponse)
@@ -744,16 +904,21 @@ async def startup_event():
     
     logger.info("Background tasks started")
     
-    # Add sample positions for demo
-    await trading_state.add_position("AAPL", 100, 150.00, "BUY", "Strong technical breakout")
-    await trading_state.add_position("TSLA", 50, 200.00, "BUY", "Positive earnings surprise")
+    # Try to load real Alpaca positions first
+    alpaca_loaded = await trading_state.load_alpaca_positions()
     
-    # Set stops and targets
-    async with trading_state.lock:
-        trading_state.positions["AAPL"]['stop_price'] = 145.00
-        trading_state.positions["AAPL"]['target_price'] = 160.00
-        trading_state.positions["TSLA"]['stop_price'] = 190.00
-        trading_state.positions["TSLA"]['target_price'] = 220.00
+    # If no Alpaca positions, add demo positions
+    if not alpaca_loaded:
+        logger.info("Using demo positions")
+        await trading_state.add_position("AAPL", 100, 150.00, "BUY", "Strong technical breakout")
+        await trading_state.add_position("TSLA", 50, 200.00, "BUY", "Positive earnings surprise")
+        
+        # Set stops and targets
+        async with trading_state.lock:
+            trading_state.positions["AAPL"]['stop_price'] = 145.00
+            trading_state.positions["AAPL"]['target_price'] = 160.00
+            trading_state.positions["TSLA"]['stop_price'] = 190.00
+            trading_state.positions["TSLA"]['target_price'] = 220.00
 
 
 @app.on_event("shutdown")
@@ -770,6 +935,6 @@ if __name__ == "__main__":
         "dashboard_api:app",
         host="0.0.0.0",
         port=8000,
-        reload=True,
+        reload=False,  # Disable hot reload to avoid multiprocessing issues
         log_level="info"
     )

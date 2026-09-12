@@ -41,6 +41,13 @@ dependencies = [
     "python-dotenv>=1.0",
     "nest-asyncio>=1.6",
     "click>=8.1",
+    # Trading bot dependencies (from trading_bot_chatgpt.py)
+    "alpaca-py>=0.44.0",
+    "matplotlib>=3.8.0",
+    "numpy>=1.24.0",
+    "pandas>=2.0.0",
+    # Crypto research and market data
+    "requests>=2.31.0",
 ]
 
 [build-system]

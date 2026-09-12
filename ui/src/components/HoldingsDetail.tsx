@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import './HoldingsDetail.css'
+import { formatCurrency, formatNumber, formatPercent } from '../utils/formatters'
 
 interface Position {
   symbol: string

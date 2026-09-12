@@ -1,5 +1,6 @@
 import React from 'react'
 import './PortfolioDashboard.css'
+import { formatCurrency, formatNumber, formatPercent } from '../utils/formatters'
 
 interface Position {
   symbol: string
@@ -41,30 +42,30 @@ export const PortfolioDashboard: React.FC<Props> = ({ portfolio, onAction }) => 
       <div className="metrics-grid">
         <div className="metric-card">
           <span className="label">Account Equity</span>
-          <span className="value">${portfolio.account_equity.toFixed(2)}</span>
+          <span className="value">{formatCurrency(portfolio.account_equity)}</span>
         </div>
         
         <div className="metric-card">
           <span className="label">Total P&L</span>
           <span className="value" style={{ color: gainColor }}>
-            ${portfolio.total_pnl.toFixed(2)} ({portfolio.total_pnl_pct.toFixed(2)}%)
+            {formatCurrency(portfolio.total_pnl)} ({formatPercent(portfolio.total_pnl_pct)})
           </span>
         </div>
         
         <div className="metric-card">
           <span className="label">Cash Available</span>
-          <span className="value">${portfolio.cash.toFixed(2)}</span>
+          <span className="value">{formatCurrency(portfolio.cash)}</span>
         </div>
         
         <div className="metric-card">
           <span className="label">Buying Power</span>
-          <span className="value">${portfolio.buying_power.toFixed(2)}</span>
+          <span className="value">{formatCurrency(portfolio.buying_power)}</span>
         </div>
         
         <div className="metric-card">
           <span className="label">Max Drawdown</span>
           <span className="value" style={{ color: '#ef4444' }}>
-            ${Math.abs(portfolio.max_drawdown).toFixed(2)}
+            {formatCurrency(Math.abs(portfolio.max_drawdown))}
           </span>
         </div>
         
@@ -97,11 +98,11 @@ export const PortfolioDashboard: React.FC<Props> = ({ portfolio, onAction }) => 
                 <tr key={pos.symbol} className={pos.unrealized_pnl >= 0 ? 'gain' : 'loss'}>
                   <td className="symbol">{pos.symbol}</td>
                   <td className="side">{pos.side}</td>
-                  <td>{pos.quantity.toFixed(2)}</td>
-                  <td>${pos.entry_price.toFixed(2)}</td>
-                  <td>${pos.current_price.toFixed(2)}</td>
+                  <td>{formatNumber(pos.quantity)}</td>
+                  <td>{formatCurrency(pos.entry_price)}</td>
+                  <td>{formatCurrency(pos.current_price)}</td>
                   <td className="pnl">
-                    ${pos.unrealized_pnl.toFixed(2)} ({pos.unrealized_pnl_pct.toFixed(2)}%)
+                    {formatCurrency(pos.unrealized_pnl)} ({formatPercent(pos.unrealized_pnl_pct)})
                   </td>
                   <td>
                     <span className={`thesis ${pos.thesis_valid ? 'valid' : 'invalid'}`}>

@@ -1,5 +1,6 @@
 import React from 'react'
 import './TradeHistory.css'
+import { formatCurrency, formatPercent } from '../utils/formatters'
 
 interface Trade {
   trade_id: string
@@ -44,14 +45,14 @@ export const TradeHistory: React.FC<Props> = ({ trades }) => {
               {trades.map((trade) => (
                 <tr key={trade.trade_id} className={trade.pnl >= 0 ? 'win' : 'loss'}>
                   <td className="symbol">{trade.symbol}</td>
-                  <td>${trade.entry_price.toFixed(2)}</td>
-                  <td>${trade.exit_price.toFixed(2)}</td>
+                  <td>{formatCurrency(trade.entry_price)}</td>
+                  <td>{formatCurrency(trade.exit_price)}</td>
                   <td className="pnl">
                     <span className={trade.pnl >= 0 ? 'gain' : 'loss'}>
-                      ${Math.abs(trade.pnl).toFixed(2)}
+                      {formatCurrency(Math.abs(trade.pnl))}
                     </span>
                   </td>
-                  <td>{trade.pnl_pct.toFixed(2)}%</td>
+                  <td>{formatPercent(trade.pnl_pct)}</td>
                   <td className="thesis">{trade.thesis_status}</td>
                   <td className="tags">
                     {trade.analysis_tags.map((tag) => (
