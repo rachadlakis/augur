@@ -17,10 +17,13 @@ import asyncio
 import json
 from datetime import datetime
 import logging
+import re
 
 # Trading system imports
 from agents.augur_agents.trading.pipeline import TradingPipeline
-from agents.augur_agents.contracts import MarketSnapshot, AccountState
+from agents.augur_agents.trading.journal import TradeJournal
+from agents.augur_agents.trading.monitor import PositionMonitor
+from agents.augur_agents.contracts import MarketSnapshot
 from config import Settings
 
 logger = logging.getLogger(__name__)
@@ -116,9 +119,130 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize trading pipeline
-settings = Settings()
-pipeline = TradingPipeline(account_equity=settings.initial_capital)
+# ============================================================================
+# Trading State Management
+# ============================================================================
+
+class TradingState:
+    """Thread-safe state holder for trading system"""
+    
+    def __init__(self):
+        self.settings = Settings()
+        self.pipeline = TradingPipeline()
+        self.journal = TradeJournal()
+        self.monitor = PositionMonitor()
+        
+        # State tracking
+        self.account_equity = self.settings.initial_capital
+        self.initial_equity = self.settings.initial_capital
+        self.equity_history: List[float] = [self.settings.initial_capital]
+        self.positions: Dict[str, Dict[str, Any]] = {}  # symbol -> position data
+        self.trades: List[Dict[str, Any]] = []  # All completed trades
+        self.lock = asyncio.Lock()
+        self.last_update = datetime.now()
+        
+    async def add_position(self, symbol: str, quantity: float, entry_price: float, side: str, thesis: str = ""):
+        """Add new position"""
+        async with self.lock:
+            self.positions[symbol] = {
+                'symbol': symbol,
+                'quantity': quantity,
+                'entry_price': entry_price,
+                'current_price': entry_price,
+                'side': side,
+                'pnl': 0.0,
+                'pnl_pct': 0.0,
+                'thesis_valid': True,
+                'thesis': thesis,
+                'stop_price': None,
+                'target_price': None,
+                'entry_time': datetime.now().isoformat(),
+            }
+            logger.info(f"Added position: {symbol} {quantity} @ {entry_price}")
+    
+    async def update_position_price(self, symbol: str, current_price: float):
+        """Update position current price and P&L"""
+        async with self.lock:
+            if symbol in self.positions:
+                pos = self.positions[symbol]
+                pos['current_price'] = current_price
+                
+                # Calculate P&L
+                if pos['side'] == 'BUY':
+                    pos['pnl'] = (current_price - pos['entry_price']) * pos['quantity']
+                else:  # SELL
+                    pos['pnl'] = (pos['entry_price'] - current_price) * pos['quantity']
+                
+                pos['pnl_pct'] = (pos['pnl'] / (pos['entry_price'] * pos['quantity'])) * 100 if pos['entry_price'] > 0 else 0.0
+    
+    async def close_position(self, symbol: str, exit_price: float, reason: str = "manual_close") -> Dict[str, Any]:
+        """Close a position"""
+        async with self.lock:
+            if symbol not in self.positions:
+                return {"success": False, "error": f"No position for {symbol}"}
+            
+            pos = self.positions[symbol]
+            
+            # Record in journal
+            trade_record = {
+                'symbol': symbol,
+                'entry': pos['entry_price'],
+                'exit': exit_price,
+                'size': pos['quantity'],
+                'side': pos['side'],
+                'thesis': pos.get('thesis', ''),
+            }
+            journal_entry = self.journal.record_trade(trade_record)
+            
+            # Add to trades list
+            trade_data = {
+                'trade_id': journal_entry['trade_id'],
+                'symbol': symbol,
+                'entry_price': pos['entry_price'],
+                'exit_price': exit_price,
+                'quantity': pos['quantity'],
+                'side': pos['side'],
+                'pnl': journal_entry['pnl'],
+                'pnl_pct': (journal_entry['pnl'] / (pos['entry_price'] * pos['quantity'])) * 100,
+                'entry_time': pos['entry_time'],
+                'exit_time': datetime.now().isoformat(),
+                'thesis_status': reason,
+                'analysis_tags': [],
+            }
+            self.trades.append(trade_data)
+            
+            # Update account equity
+            self.account_equity += journal_entry['pnl']
+            self.equity_history.append(self.account_equity)
+            
+            # Remove position
+            del self.positions[symbol]
+            
+            logger.info(f"Closed position: {symbol} P&L: ${journal_entry['pnl']:.2f}")
+            return {
+                "success": True,
+                "pnl": journal_entry['pnl'],
+                "trade_id": journal_entry['trade_id']
+            }
+    
+    def get_max_drawdown(self) -> float:
+        """Calculate max drawdown from equity history"""
+        if not self.equity_history:
+            return 0.0
+        
+        peak = self.equity_history[0]
+        max_dd = 0.0
+        
+        for equity in self.equity_history:
+            if equity > peak:
+                peak = equity
+            dd = (peak - equity) / peak
+            max_dd = max(max_dd, dd)
+        
+        return max_dd * 100
+
+# Initialize trading state
+trading_state = TradingState()
 
 # ============================================================================
 # Connection Management
@@ -253,21 +377,58 @@ async def execute_action(action: Dict[str, Any]):
     symbol = action.get("symbol")
     params = action.get("params", {})
     
+    if not symbol:
+        raise HTTPException(status_code=400, detail="Symbol required")
+    
     if action_type == "CLOSE_POSITION":
-        # Close position for symbol
-        logger.info(f"Closing position: {symbol}")
-        return {"status": "success", "message": f"Closed {symbol}"}
+        # Close position at market price
+        result = await trading_state.close_position(
+            symbol,
+            trading_state.positions[symbol]['current_price'] if symbol in trading_state.positions else 0,
+            reason="manual_close"
+        )
+        
+        if result["success"]:
+            # Broadcast alert
+            await manager.broadcast_alert(Alert(
+                alert_type="POSITION_ALERT",
+                symbol=symbol,
+                message=f"Position closed: ${result.get('pnl', 0):.2f} P&L",
+                severity="INFO",
+                timestamp=datetime.now().isoformat()
+            ))
+        
+        return result
     
     elif action_type == "ADJUST_SIZE":
         # Adjust position size
         new_qty = params.get("quantity")
-        logger.info(f"Adjusting {symbol} to {new_qty} shares")
-        return {"status": "success", "message": f"Adjusted {symbol} to {new_qty} shares"}
+        if not new_qty or new_qty <= 0:
+            raise HTTPException(status_code=400, detail="Valid quantity required")
+        
+        async with trading_state.lock:
+            if symbol in trading_state.positions:
+                trading_state.positions[symbol]['quantity'] = new_qty
+                logger.info(f"Adjusted {symbol} to {new_qty} shares")
+                return {"status": "success", "message": f"Adjusted {symbol} to {new_qty} shares"}
+            else:
+                raise HTTPException(status_code=404, detail=f"No position for {symbol}")
     
     elif action_type == "MANUAL_OVERRIDE":
         # Manual buy/sell override
         logger.warning(f"Manual override for {symbol}: {params}")
         return {"status": "success", "message": f"Override executed for {symbol}"}
+    
+    elif action_type == "UPDATE_STOP":
+        # Update stop loss
+        stop_price = params.get("stop_price")
+        async with trading_state.lock:
+            if symbol in trading_state.positions:
+                trading_state.positions[symbol]['stop_price'] = stop_price
+                logger.info(f"Updated {symbol} stop to ${stop_price}")
+                return {"status": "success", "message": f"Stop updated to ${stop_price}"}
+            else:
+                raise HTTPException(status_code=404, detail=f"No position for {symbol}")
     
     else:
         raise HTTPException(status_code=400, detail=f"Unknown action: {action_type}")
@@ -289,52 +450,139 @@ async def health_check():
 
 async def get_portfolio_snapshot() -> PortfolioDashboard:
     """
-    Generate complete portfolio snapshot.
-    TODO: Wire up to actual trading system state.
+    Generate complete portfolio snapshot from trading state.
+    Returns real positions, trades, and P&L metrics.
     """
-    return PortfolioDashboard(
-        account_equity=settings.initial_capital,
-        cash=settings.initial_capital * 0.2,
-        buying_power=settings.initial_capital * 0.4,
-        total_pnl=0.0,
-        total_pnl_pct=0.0,
-        max_drawdown=0.0,
-        positions=[],
-        recent_trades=[],
-        timestamp=datetime.now().isoformat()
-    )
+    async with trading_state.lock:
+        # Build positions list
+        positions = []
+        for symbol, pos in trading_state.positions.items():
+            positions.append(Position(
+                symbol=symbol,
+                quantity=pos['quantity'],
+                entry_price=pos['entry_price'],
+                current_price=pos['current_price'],
+                unrealized_pnl=pos['pnl'],
+                unrealized_pnl_pct=pos['pnl_pct'],
+                side=pos['side'],
+                thesis_valid=pos['thesis_valid'],
+                stop_price=pos.get('stop_price'),
+                target_price=pos.get('target_price'),
+            ))
+        
+        # Calculate total P&L
+        total_pnl = sum(pos['pnl'] for pos in trading_state.positions.values())
+        total_pnl_pct = (total_pnl / trading_state.initial_equity * 100) if trading_state.initial_equity > 0 else 0.0
+        
+        # Calculate max drawdown
+        max_drawdown = trading_state.get_max_drawdown()
+        
+        # Get recent trades (last 20)
+        recent_trades = [
+            Trade(
+                trade_id=t['trade_id'],
+                symbol=t['symbol'],
+                entry_price=t['entry_price'],
+                exit_price=t['exit_price'],
+                quantity=t['quantity'],
+                side=t['side'],
+                pnl=t['pnl'],
+                pnl_pct=t['pnl_pct'],
+                entry_time=t['entry_time'],
+                exit_time=t['exit_time'],
+                thesis_status=t['thesis_status'],
+                analysis_tags=t['analysis_tags'],
+            )
+            for t in trading_state.trades[-20:]
+        ]
+        
+        return PortfolioDashboard(
+            account_equity=trading_state.account_equity,
+            cash=trading_state.account_equity * 0.3,  # Approximate available cash
+            buying_power=trading_state.account_equity * 0.5,  # Approximate buying power
+            total_pnl=total_pnl,
+            total_pnl_pct=total_pnl_pct,
+            max_drawdown=max_drawdown,
+            positions=positions,
+            recent_trades=recent_trades,
+            timestamp=datetime.now().isoformat()
+        )
 
 
 async def parse_and_validate_command(text: str, symbol: Optional[str]) -> CommandResponse:
     """
     Parse natural language command and validate against risk rules.
-    TODO: Integrate with LLM agent for semantic understanding.
+    Extracts symbol from text if not provided.
     """
     lower_text = text.lower()
     
-    # Simple keyword-based parsing (replace with LLM later)
-    if "sell" in lower_text or "close" in lower_text:
+    # Try to extract symbol from text (e.g., "sell AAPL", "close TSLA at $150")
+    if not symbol:
+        # Look for uppercase words that might be symbols
+        matches = re.findall(r'\b([A-Z]{1,5})\b', text)
+        if matches:
+            symbol = matches[0]
+    
+    # Check if position exists
+    has_position = symbol and symbol in trading_state.positions if symbol else False
+    
+    # Parse commands
+    if any(word in lower_text for word in ['sell', 'close', 'exit']):
+        if not has_position:
+            return CommandResponse(
+                understood=True,
+                reasoning=f"No open position for {symbol}" if symbol else "No symbol specified",
+                requires_confirmation=False
+            )
+        
         return CommandResponse(
             understood=True,
             action="CLOSE_POSITION",
-            params={"symbol": symbol or "UNKNOWN"},
-            reasoning="Command contains 'sell' or 'close'",
+            params={"symbol": symbol},
+            reasoning=f"Close {symbol} position at current market price",
             requires_confirmation=True
         )
     
-    elif "adjust" in lower_text or "size" in lower_text:
+    elif any(word in lower_text for word in ['adjust', 'size', 'reduce', 'increase']):
+        if not has_position:
+            return CommandResponse(
+                understood=True,
+                reasoning=f"No open position for {symbol}" if symbol else "No symbol specified",
+                requires_confirmation=False
+            )
+        
+        # Try to extract quantity
+        qty_match = re.search(r'(\d+)', text)
+        quantity = float(qty_match.group(1)) if qty_match else None
+        
         return CommandResponse(
             understood=True,
             action="ADJUST_SIZE",
-            params={"symbol": symbol or "UNKNOWN"},
-            reasoning="Command contains 'adjust' or 'size'",
+            params={"symbol": symbol, "quantity": quantity},
+            reasoning=f"Adjust {symbol} position size",
             requires_confirmation=True
+        )
+    
+    elif "portfolio" in lower_text or "summary" in lower_text:
+        return CommandResponse(
+            understood=True,
+            action="SHOW_SUMMARY",
+            reasoning="Show portfolio summary",
+            requires_confirmation=False
+        )
+    
+    elif "news" in lower_text or "alert" in lower_text:
+        return CommandResponse(
+            understood=True,
+            action="SHOW_ALERTS",
+            reasoning="Show recent alerts and news",
+            requires_confirmation=False
         )
     
     else:
         return CommandResponse(
             understood=False,
-            reasoning="Could not understand command",
+            reasoning="Could not understand command. Try: 'close AAPL', 'adjust size', 'show summary'",
             requires_confirmation=False
         )
 
@@ -371,12 +619,108 @@ async def handle_action(websocket: WebSocket, data: Dict[str, Any]):
 # Background Tasks
 # ============================================================================
 
+async def monitor_positions():
+    """Background task to monitor positions and check for exit conditions"""
+    while True:
+        try:
+            await asyncio.sleep(1)  # Check every second
+            
+            async with trading_state.lock:
+                positions_to_close = []
+                
+                for symbol, pos in trading_state.positions.items():
+                    # Check stop loss
+                    if pos['stop_price'] and pos['side'] == 'BUY':
+                        if pos['current_price'] <= pos['stop_price']:
+                            positions_to_close.append((symbol, pos['current_price'], "hit_stop"))
+                    
+                    # Check target
+                    if pos['target_price'] and pos['side'] == 'BUY':
+                        if pos['current_price'] >= pos['target_price']:
+                            positions_to_close.append((symbol, pos['current_price'], "hit_target"))
+                    
+                    # Check thesis validity (random for demo, replace with real logic)
+                    if not pos['thesis_valid']:
+                        positions_to_close.append((symbol, pos['current_price'], "thesis_invalidated"))
+                
+                # Close positions that hit exit criteria
+                for symbol, exit_price, reason in positions_to_close:
+                    result = await trading_state.close_position(symbol, exit_price, reason)
+                    if result["success"]:
+                        await manager.broadcast_alert(Alert(
+                            alert_type="POSITION_ALERT",
+                            symbol=symbol,
+                            message=f"Position closed: {reason} at ${exit_price:.2f}",
+                            severity="WARNING" if reason == "hit_stop" else "INFO",
+                            timestamp=datetime.now().isoformat()
+                        ))
+        
+        except Exception as e:
+            logger.error(f"Error in position monitoring: {e}")
+            await asyncio.sleep(1)
+
+
+async def broadcast_portfolio_updates():
+    """Background task to broadcast portfolio updates to all clients"""
+    while True:
+        try:
+            await asyncio.sleep(0.5)  # Update every 500ms
+            
+            if manager.active_connections:
+                portfolio = await get_portfolio_snapshot()
+                await manager.broadcast({
+                    "type": "portfolio_update",
+                    "data": portfolio.model_dump()
+                })
+        
+        except Exception as e:
+            logger.error(f"Error broadcasting portfolio: {e}")
+            await asyncio.sleep(0.5)
+
+
+async def simulate_market_data():
+    """Background task to simulate market price updates (for demo)"""
+    while True:
+        try:
+            await asyncio.sleep(2)  # Update prices every 2 seconds
+            
+            async with trading_state.lock:
+                import random
+                
+                for symbol, pos in trading_state.positions.items():
+                    # Simulate random price movement (±0.5%)
+                    change = random.uniform(-0.005, 0.005)
+                    new_price = pos['current_price'] * (1 + change)
+                    
+                    await trading_state.update_position_price(symbol, new_price)
+        
+        except Exception as e:
+            logger.error(f"Error in market data simulation: {e}")
+            await asyncio.sleep(2)
+
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize on app startup"""
     logger.info("Dashboard API starting up...")
-    # TODO: Start real-time data streams
-    # TODO: Initialize alert monitoring
+    
+    # Create background tasks
+    asyncio.create_task(monitor_positions())
+    asyncio.create_task(broadcast_portfolio_updates())
+    asyncio.create_task(simulate_market_data())
+    
+    logger.info("Background tasks started")
+    
+    # Add sample positions for demo
+    await trading_state.add_position("AAPL", 100, 150.00, "BUY", "Strong technical breakout")
+    await trading_state.add_position("TSLA", 50, 200.00, "BUY", "Positive earnings surprise")
+    
+    # Set stops and targets
+    async with trading_state.lock:
+        trading_state.positions["AAPL"]['stop_price'] = 145.00
+        trading_state.positions["AAPL"]['target_price'] = 160.00
+        trading_state.positions["TSLA"]['stop_price'] = 190.00
+        trading_state.positions["TSLA"]['target_price'] = 220.00
 
 
 @app.on_event("shutdown")

@@ -16,7 +16,11 @@ class TradingMode(str, Enum):
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"  # Ignore extra environment variables not defined in this model
+    )
 
     # Mode
     trading_mode: TradingMode = TradingMode.PAPER
@@ -42,6 +46,9 @@ class Settings(BaseSettings):
     # Optional on-chain wallet
     wallet_private_key: SecretStr = SecretStr("")
     wallet_rpc_url: str = ""
+
+    # Trading dashboard
+    initial_capital: float = 100000.0
 
     def require_live_safety_check(self) -> None:
         """

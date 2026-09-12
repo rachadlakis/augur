@@ -2,3 +2,6 @@ pydantic>=2.0
 pydantic-settings>=2.0
 python-binance>=1.0.19
 alpaca-py>=0.30.0
+fastapi>=0.100.0
+uvicorn[standard]>=0.24.0
+websockets>=12.0
