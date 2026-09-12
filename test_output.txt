@@ -1,0 +1,450 @@
+============================= test session starts =============================
+platform win32 -- Python 3.12.10, pytest-9.1.1, pluggy-1.6.0
+rootdir: C:\Users\user\Desktop\my-files\projects\personal-projects\augur
+configfile: pyproject.toml
+plugins: anyio-4.15.1, asyncio-1.4.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 212 items
+
+agents\tests\test_a2a_client.py F...........                             [  5%]
+agents\tests\test_contracts.py ....................                      [ 15%]
+agents\tests\test_governance.py ...................                      [ 24%]
+agents\tests\test_lifecycle.py ...............                           [ 31%]
+agents\tests\test_orchestrator.py ..............                         [ 37%]
+agents\tests\test_parallelism.py FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF    [ 54%]
+agents\tests\test_pipeline_e2e.py F.                                     [ 55%]
+agents\tests\test_registry.py EEEEEEEEEEEEE                              [ 61%]
+agents\tests\test_servers_smoke.py ...........................F          [ 75%]
+agents\tests\test_specialists.py .............                           [ 81%]
+agents\tests\test_tools_stub.py ..............FFFF..FFFF.FF.......       [ 97%]
+agents\tests\test_trading_core.py ......                                 [100%]
+
+=================================== ERRORS ====================================
+________ ERROR at setup of test_default_roster_is_the_built_in_workers ________
+agents\tests\test_registry.py:13: in roster_env
+    monkeypatch.setattr(config, "MOBIUS_AGENT_REGISTRY", "")
+E   AttributeError: <module 'augur_agents.config' from 'C:\\Users\\user\\Desktop\\my-files\\projects\\personal-projects\\augur\\agents\\augur_agents\\config.py'> has no attribute 'MOBIUS_AGENT_REGISTRY'
+____ ERROR at setup of test_default_roster_points_at_the_configured_ports _____
+agents\tests\test_registry.py:13: in roster_env
+    monkeypatch.setattr(config, "MOBIUS_AGENT_REGISTRY", "")
+E   AttributeError: <module 'augur_agents.config' from 'C:\\Users\\user\\Desktop\\my-files\\projects\\personal-projects\\augur\\agents\\augur_agents\\config.py'> has no attribute 'MOBIUS_AGENT_REGISTRY'
+___ ERROR at setup of TestInlineRegistry.test_parses_name_equals_url_pairs ____
+agents\tests\test_registry.py:13: in roster_env
+    monkeypatch.setattr(config, "MOBIUS_AGENT_REGISTRY", "")
+E   AttributeError: <module 'augur_agents.config' from 'C:\\Users\\user\\Desktop\\my-files\\projects\\personal-projects\\augur\\agents\\augur_agents\\config.py'> has no attribute 'MOBIUS_AGENT_REGISTRY'
+_ ERROR at setup of TestInlineRegistry.test_a_trailing_slash_is_stripped_so_card_url_is_well_formed _
+agents\tests\test_registry.py:13: in roster_env
+    monkeypatch.setattr(config, "MOBIUS_AGENT_REGISTRY", "")
+E   AttributeError: <module 'augur_agents.config' from 'C:\\Users\\user\\Desktop\\my-files\\projects\\personal-projects\\augur\\agents\\augur_agents\\config.py'> has no attribute 'MOBIUS_AGENT_REGISTRY'
+_ ERROR at setup of TestInlineRegistry.test_a_malformed_entry_is_skipped_not_fatal _
+agents\tests\test_registry.py:13: in roster_env
+    monkeypatch.setattr(config, "MOBIUS_AGENT_REGISTRY", "")
+E   AttributeError: <module 'augur_agents.config' from 'C:\\Users\\user\\Desktop\\my-files\\projects\\personal-projects\\augur\\agents\\augur_agents\\config.py'> has no attribute 'MOBIUS_AGENT_REGISTRY'
+_____ ERROR at setup of TestInlineRegistry.test_blank_entries_are_ignored _____
+agents\tests\test_registry.py:13: in roster_env
+    monkeypatch.setattr(config, "MOBIUS_AGENT_REGISTRY", "")
+E   AttributeError: <module 'augur_agents.config' from 'C:\\Users\\user\\Desktop\\my-files\\projects\\personal-projects\\augur\\agents\\augur_agents\\config.py'> has no attribute 'MOBIUS_AGENT_REGISTRY'
+_ ERROR at setup of TestInlineRegistry.test_a_duplicate_name_keeps_the_first __
+agents\tests\test_registry.py:13: in roster_env
+    monkeypatch.setattr(config, "MOBIUS_AGENT_REGISTRY", "")
+E   AttributeError: <module 'augur_agents.config' from 'C:\\Users\\user\\Desktop\\my-files\\projects\\personal-projects\\augur\\agents\\augur_agents\\config.py'> has no attribute 'MOBIUS_AGENT_REGISTRY'
+____ ERROR at setup of TestTomlRegistry.test_reads_the_agents_table_shape _____
+agents\tests\test_registry.py:13: in roster_env
+    monkeypatch.setattr(config, "MOBIUS_AGENT_REGISTRY", "")
+E   AttributeError: <module 'augur_agents.config' from 'C:\\Users\\user\\Desktop\\my-files\\projects\\personal-projects\\augur\\agents\\augur_agents\\config.py'> has no attribute 'MOBIUS_AGENT_REGISTRY'
+___ ERROR at setup of TestTomlRegistry.test_reads_the_array_of_tables_shape ___
+agents\tests\test_registry.py:13: in roster_env
+    monkeypatch.setattr(config, "MOBIUS_AGENT_REGISTRY", "")
+E   AttributeError: <module 'augur_agents.config' from 'C:\\Users\\user\\Desktop\\my-files\\projects\\personal-projects\\augur\\agents\\augur_agents\\config.py'> has no attribute 'MOBIUS_AGENT_REGISTRY'
+_ ERROR at setup of TestTomlRegistry.test_a_missing_file_yields_an_empty_roster_not_a_crash _
+agents\tests\test_registry.py:13: in roster_env
+    monkeypatch.setattr(config, "MOBIUS_AGENT_REGISTRY", "")
+E   AttributeError: <module 'augur_agents.config' from 'C:\\Users\\user\\Desktop\\my-files\\projects\\personal-projects\\augur\\agents\\augur_agents\\config.py'> has no attribute 'MOBIUS_AGENT_REGISTRY'
+____ ERROR at setup of TestTomlRegistry.test_malformed_toml_does_not_raise ____
+agents\tests\test_registry.py:13: in roster_env
+    monkeypatch.setattr(config, "MOBIUS_AGENT_REGISTRY", "")
+E   AttributeError: <module 'augur_agents.config' from 'C:\\Users\\user\\Desktop\\my-files\\projects\\personal-projects\\augur\\agents\\augur_agents\\config.py'> has no attribute 'MOBIUS_AGENT_REGISTRY'
+_____ ERROR at setup of TestTomlRegistry.test_a_non_string_url_is_skipped _____
+agents\tests\test_registry.py:13: in roster_env
+    monkeypatch.setattr(config, "MOBIUS_AGENT_REGISTRY", "")
+E   AttributeError: <module 'augur_agents.config' from 'C:\\Users\\user\\Desktop\\my-files\\projects\\personal-projects\\augur\\agents\\augur_agents\\config.py'> has no attribute 'MOBIUS_AGENT_REGISTRY'
+___________ ERROR at setup of test_inline_registry_wins_over_a_file ___________
+agents\tests\test_registry.py:13: in roster_env
+    monkeypatch.setattr(config, "MOBIUS_AGENT_REGISTRY", "")
+E   AttributeError: <module 'augur_agents.config' from 'C:\\Users\\user\\Desktop\\my-files\\projects\\personal-projects\\augur\\agents\\augur_agents\\config.py'> has no attribute 'MOBIUS_AGENT_REGISTRY'
+================================== FAILURES ===================================
+________________________ test_get_directory_is_cached _________________________
+agents\tests\test_a2a_client.py:40: in test_get_directory_is_cached
+    assert get_directory() is get_directory()
+           ^^^^^^^^^^^^^^^
+agents\augur_agents\a2a_client.py:432: in get_directory
+    _directory = AgentDirectory()
+                 ^^^^^^^^^^^^^^^^
+agents\augur_agents\a2a_client.py:143: in __init__
+    ep.name: ep for ep in (endpoints if endpoints is not None else registry.load_roster())
+                                                                   ^^^^^^^^^^^^^^^^^^^^^^
+agents\augur_agents\registry.py:117: in load_roster
+    if config.MOBIUS_AGENT_REGISTRY:
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.config' has no attribute 'MOBIUS_AGENT_REGISTRY'. Did you mean: 'AUGUR_AGENT_REGISTRY'?
+_ TestParameterCounts.test_gpt2_small_is_exact_with_a_real_intermediate_size __
+agents\tests\test_parallelism.py:19: in test_gpt2_small_is_exact_with_a_real_intermediate_size
+    params = P.params_from_shape(
+             ^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'params_from_shape'
+__ TestParameterCounts.test_llama_7b_is_close_with_a_real_intermediate_size ___
+agents\tests\test_parallelism.py:25: in test_llama_7b_is_close_with_a_real_intermediate_size
+    params = P.params_from_shape(
+             ^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'params_from_shape'
+_____ TestParameterCounts.test_the_playbook_shorthand_overestimates_llama _____
+agents\tests\test_parallelism.py:36: in test_the_playbook_shorthand_overestimates_llama
+    shorthand = P.params_from_shape(4096, 32, vocab_size=32000)
+                ^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'params_from_shape'
+________ TestStepOneFitInMemory.test_under_10b_uses_a_single_technique ________
+agents\tests\test_parallelism.py:44: in test_under_10b_uses_a_single_technique
+    rec = P.recommend_parallelism(param_count_b=7, gpu_count=8,
+          ^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'recommend_parallelism'
+_______ TestStepOneFitInMemory.test_10b_to_100b_combines_tp_with_zero3 ________
+agents\tests\test_parallelism.py:51: in test_10b_to_100b_combines_tp_with_zero3
+    rec = P.recommend_parallelism(param_count_b=70, gpu_count=64,
+          ^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'recommend_parallelism'
+___ TestStepOneFitInMemory.test_over_100b_adds_pipeline_and_drops_to_zero2 ____
+agents\tests\test_parallelism.py:58: in test_over_100b_adds_pipeline_and_drops_to_zero2
+    rec = P.recommend_parallelism(param_count_b=405, gpu_count=128,
+          ^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'recommend_parallelism'
+_ TestScaleThresholds.test_beyond_512_gpus_tensor_parallelism_takes_some_load _
+agents\tests\test_parallelism.py:67: in test_beyond_512_gpus_tensor_parallelism_takes_some_load
+    rec = P.recommend_parallelism(param_count_b=7, gpu_count=512,
+          ^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'recommend_parallelism'
+___________ TestScaleThresholds.test_the_1024_gpu_reference_recipe ____________
+agents\tests\test_parallelism.py:73: in test_the_1024_gpu_reference_recipe
+    rec = P.recommend_parallelism(param_count_b=70, gpu_count=1024,
+          ^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'recommend_parallelism'
+___ TestScaleThresholds.test_small_clusters_stay_on_plain_data_parallelism ____
+agents\tests\test_parallelism.py:80: in test_small_clusters_stay_on_plain_data_parallelism
+    rec = P.recommend_parallelism(param_count_b=1, gpu_count=8,
+          ^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'recommend_parallelism'
+_________________ test_long_sequences_get_context_parallelism _________________
+agents\tests\test_parallelism.py:87: in test_long_sequences_get_context_parallelism
+    rec = P.recommend_parallelism(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'recommend_parallelism'
+______________________ test_moe_gets_expert_parallelism _______________________
+agents\tests\test_parallelism.py:95: in test_moe_gets_expert_parallelism
+    rec = P.recommend_parallelism(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'recommend_parallelism'
+__ TestAlwaysOnDefaults.test_selective_recompute_and_bf16_by_default[0.1-1] ___
+agents\tests\test_parallelism.py:105: in test_selective_recompute_and_bf16_by_default
+    rec = P.recommend_parallelism(param_count_b=params, gpu_count=gpus)
+          ^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'recommend_parallelism'
+___ TestAlwaysOnDefaults.test_selective_recompute_and_bf16_by_default[7-8] ____
+agents\tests\test_parallelism.py:105: in test_selective_recompute_and_bf16_by_default
+    rec = P.recommend_parallelism(param_count_b=params, gpu_count=gpus)
+          ^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'recommend_parallelism'
+__ TestAlwaysOnDefaults.test_selective_recompute_and_bf16_by_default[70-64] ___
+agents\tests\test_parallelism.py:105: in test_selective_recompute_and_bf16_by_default
+    rec = P.recommend_parallelism(param_count_b=params, gpu_count=gpus)
+          ^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'recommend_parallelism'
+______ TestBatchSizeArithmetic.test_gbs_equals_mbs_times_accum_times_dp _______
+agents\tests\test_parallelism.py:113: in test_gbs_equals_mbs_times_accum_times_dp
+    rec = P.recommend_parallelism(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'recommend_parallelism'
+_ TestBatchSizeArithmetic.test_dp_consumes_the_gpus_left_after_the_other_axes _
+agents\tests\test_parallelism.py:120: in test_dp_consumes_the_gpus_left_after_the_other_axes
+    rec = P.recommend_parallelism(param_count_b=70, gpu_count=64,
+          ^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'recommend_parallelism'
+____________ TestGpuPoorPath.test_a_run_that_will_not_fit_says_so _____________
+agents\tests\test_parallelism.py:129: in test_a_run_that_will_not_fit_says_so
+    rec = P.recommend_parallelism(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'recommend_parallelism'
+_____ TestGpuPoorPath.test_memory_pressure_escalates_recomputation_first ______
+agents\tests\test_parallelism.py:137: in test_memory_pressure_escalates_recomputation_first
+    rec = P.recommend_parallelism(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'recommend_parallelism'
+__________ TestMemoryModel.test_zero3_sharding_reduces_per_gpu_state __________
+agents\tests\test_parallelism.py:148: in test_zero3_sharding_reduces_per_gpu_state
+    assert P.state_bytes_per_param(sharded) < P.state_bytes_per_param(solo)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'state_bytes_per_param'
+_________ TestMemoryModel.test_unsharded_state_is_16_bytes_per_param __________
+agents\tests\test_parallelism.py:151: in test_unsharded_state_is_16_bytes_per_param
+    assert P.state_bytes_per_param(ParallelismConfig(zero_stage=0, dp=1)) == 16
+           ^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'state_bytes_per_param'
+________ TestMemoryModel.test_recomputation_reduces_activation_memory _________
+agents\tests\test_parallelism.py:155: in test_recomputation_reduces_activation_memory
+    none = P.estimate_memory(
+           ^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'estimate_memory'
+______ TestComputeModel.test_flops_follow_six_times_tokens_times_params _______
+agents\tests\test_parallelism.py:166: in test_flops_follow_six_times_tokens_times_params
+    est = P.estimate_compute(param_count_b=1, total_tokens=1e9, gpu_count=1,
+          ^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'estimate_compute'
+____________ TestComputeModel.test_more_gpus_means_less_wall_clock ____________
+agents\tests\test_parallelism.py:171: in test_more_gpus_means_less_wall_clock
+    one = P.estimate_compute(param_count_b=7, total_tokens=1e9, gpu_count=1)
+          ^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'estimate_compute'
+____________ TestComputeModel.test_assumptions_are_always_returned ____________
+agents\tests\test_parallelism.py:177: in test_assumptions_are_always_returned
+    est = P.estimate_compute(param_count_b=7, total_tokens=1e9, gpu_count=8)
+          ^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'estimate_compute'
+_________________ TestValidation.test_tp_above_8_is_rejected __________________
+agents\tests\test_parallelism.py:184: in test_tp_above_8_is_rejected
+    problems = P.validate_parallelism(par, gpu_count=16, num_heads=32)
+               ^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'validate_parallelism'
+________ TestValidation.test_tp_cannot_exceed_the_attention_head_count ________
+agents\tests\test_parallelism.py:189: in test_tp_cannot_exceed_the_attention_head_count
+    problems = P.validate_parallelism(par, gpu_count=8, num_heads=4)
+               ^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'validate_parallelism'
+___________ TestValidation.test_axes_must_multiply_to_the_gpu_count ___________
+agents\tests\test_parallelism.py:194: in test_axes_must_multiply_to_the_gpu_count
+    problems = P.validate_parallelism(par, gpu_count=9, num_heads=32)
+               ^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'validate_parallelism'
+___________ TestValidation.test_batch_arithmetic_must_be_consistent ___________
+agents\tests\test_parallelism.py:199: in test_batch_arithmetic_must_be_consistent
+    problems = P.validate_parallelism(par, gpu_count=1, num_heads=12)
+               ^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'validate_parallelism'
+_____________ TestValidation.test_zero3_with_pipeline_is_flagged ______________
+agents\tests\test_parallelism.py:205: in test_zero3_with_pipeline_is_flagged
+    problems = P.validate_parallelism(par, gpu_count=4, num_heads=12)
+               ^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'validate_parallelism'
+___________ TestValidation.test_a_consistent_config_has_no_problems ___________
+agents\tests\test_parallelism.py:210: in test_a_consistent_config_has_no_problems
+    assert P.validate_parallelism(par, gpu_count=8, num_heads=32) == []
+           ^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'validate_parallelism'
+_____________ TestBackendGaps.test_plain_zero3_is_runnable_today ______________
+agents\tests\test_parallelism.py:216: in test_plain_zero3_is_runnable_today
+    assert P.backend_gaps(par) == []
+           ^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'backend_gaps'
+_ TestBackendGaps.test_advanced_parallelism_is_reported_as_unsupported[tp-8-tensor] _
+agents\tests\test_parallelism.py:226: in test_advanced_parallelism_is_reported_as_unsupported
+    assert any(expected in gap for gap in P.backend_gaps(par))
+                                          ^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'backend_gaps'
+_ TestBackendGaps.test_advanced_parallelism_is_reported_as_unsupported[pp-2-pipeline] _
+agents\tests\test_parallelism.py:226: in test_advanced_parallelism_is_reported_as_unsupported
+    assert any(expected in gap for gap in P.backend_gaps(par))
+                                          ^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'backend_gaps'
+_ TestBackendGaps.test_advanced_parallelism_is_reported_as_unsupported[cp-2-context] _
+agents\tests\test_parallelism.py:226: in test_advanced_parallelism_is_reported_as_unsupported
+    assert any(expected in gap for gap in P.backend_gaps(par))
+                                          ^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'backend_gaps'
+_ TestBackendGaps.test_advanced_parallelism_is_reported_as_unsupported[ep-4-expert] _
+agents\tests\test_parallelism.py:226: in test_advanced_parallelism_is_reported_as_unsupported
+    assert any(expected in gap for gap in P.backend_gaps(par))
+                                          ^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'backend_gaps'
+_____________ TestBackendGaps.test_fp8_is_reported_as_unsupported _____________
+agents\tests\test_parallelism.py:229: in test_fp8_is_reported_as_unsupported
+    assert P.backend_gaps(ParallelismConfig(precision="fp8"))
+           ^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'backend_gaps'
+____________ test_project_runs_from_objective_to_evaluation_report ____________
+agents\tests\test_pipeline_e2e.py:38: in test_project_runs_from_objective_to_evaluation_report
+    rec = T.recommend_parallelism(param_count_b=0.124, gpu_count=1,
+agents\augur_agents\tools\training_tools.py:76: in recommend_parallelism
+    rec = P.recommend_parallelism(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'recommend_parallelism'
+_________ test_the_cli_lists_the_roster_without_touching_the_network __________
+agents\tests\test_servers_smoke.py:142: in test_the_cli_lists_the_roster_without_touching_the_network
+    assert list_agents() == 0
+           ^^^^^^^^^^^^^
+agents\augur_agents\__main__.py:113: in list_agents
+    for ep in registry.load_roster():
+              ^^^^^^^^^^^^^^^^^^^^^^
+agents\augur_agents\registry.py:117: in load_roster
+    if config.MOBIUS_AGENT_REGISTRY:
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.config' has no attribute 'MOBIUS_AGENT_REGISTRY'. Did you mean: 'AUGUR_AGENT_REGISTRY'?
+---------------------------- Captured stdout call -----------------------------
+LLM provider : anthropic
+Default model: claude-haiku-4-5-20251001
+
+agent         port    model                                 url
+------------------------------------------------------------------------------------------------
+____ TestTrainingPlanning.test_recommend_parallelism_explains_every_choice ____
+agents\tests\test_tools_stub.py:117: in test_recommend_parallelism_explains_every_choice
+    out = T.recommend_parallelism(param_count_b=0.124, gpu_count=1)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents\augur_agents\tools\training_tools.py:76: in recommend_parallelism
+    rec = P.recommend_parallelism(
+          ^^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'recommend_parallelism'
+___ TestTrainingPlanning.test_estimate_returns_a_cost_with_its_assumptions ____
+agents\tests\test_tools_stub.py:123: in test_estimate_returns_a_cost_with_its_assumptions
+    out = T.estimate_training_job(runnable_plan)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents\augur_agents\tools\training_tools.py:170: in estimate_training_job
+    mem = P.estimate_memory(
+          ^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'estimate_memory'
+_ TestTrainingPlanning.test_validate_flags_a_plan_that_needs_an_unsupported_backend _
+agents\tests\test_tools_stub.py:132: in test_validate_flags_a_plan_that_needs_an_unsupported_backend
+    out = T.validate_training_plan(sample_plan.model_dump(mode="json"))
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents\augur_agents\tools\training_tools.py:125: in validate_training_plan
+    problems = P.validate_parallelism(
+               ^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'validate_parallelism'
+_____ TestSubmitDoesNotBlock.test_submit_returns_before_the_run_finishes ______
+agents\tests\test_tools_stub.py:152: in test_submit_returns_before_the_run_finishes
+    out = T.submit_training_job(runnable_plan, approval_token=token)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents\augur_agents\tools\training_tools.py:312: in submit_training_job
+    gaps = P.backend_gaps(tp.parallelism)
+           ^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'backend_gaps'
+_ TestSubmitDoesNotBlock.test_a_plan_the_backend_cannot_run_is_refused_even_with_approval _
+agents\tests\test_tools_stub.py:179: in test_a_plan_the_backend_cannot_run_is_refused_even_with_approval
+    out = T.submit_training_job(d, approval_token=token)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents\augur_agents\tools\training_tools.py:312: in submit_training_job
+    gaps = P.backend_gaps(tp.parallelism)
+           ^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'backend_gaps'
+______ TestJobLifecycle.test_a_job_advances_to_completed_over_wall_clock ______
+agents\tests\test_tools_stub.py:203: in test_a_job_advances_to_completed_over_wall_clock
+    job = _launch(monkeypatch, sample_plan, approved, seconds=1)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents\tests\test_tools_stub.py:194: in _launch
+    return T.submit_training_job(
+agents\augur_agents\tools\training_tools.py:312: in submit_training_job
+    gaps = P.backend_gaps(tp.parallelism)
+           ^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'backend_gaps'
+__ TestJobLifecycle.test_a_completed_job_registers_an_artifact_with_lineage ___
+agents\tests\test_tools_stub.py:213: in test_a_completed_job_registers_an_artifact_with_lineage
+    job = _launch(monkeypatch, sample_plan, approved, seconds=1)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents\tests\test_tools_stub.py:194: in _launch
+    return T.submit_training_job(
+agents\augur_agents\tools\training_tools.py:312: in submit_training_job
+    gaps = P.backend_gaps(tp.parallelism)
+           ^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'backend_gaps'
+_______ TestJobLifecycle.test_cancelling_a_queued_job_needs_no_approval _______
+agents\tests\test_tools_stub.py:222: in test_cancelling_a_queued_job_needs_no_approval
+    job = _launch(monkeypatch, sample_plan, approved, seconds=30)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents\tests\test_tools_stub.py:194: in _launch
+    return T.submit_training_job(
+agents\augur_agents\tools\training_tools.py:312: in submit_training_job
+    gaps = P.backend_gaps(tp.parallelism)
+           ^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'backend_gaps'
+_______________ TestJobLifecycle.test_the_loss_curve_decreases ________________
+agents\tests\test_tools_stub.py:232: in test_the_loss_curve_decreases
+    job = _launch(monkeypatch, sample_plan, approved, seconds=1)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+agents\tests\test_tools_stub.py:194: in _launch
+    return T.submit_training_job(
+agents\augur_agents\tools\training_tools.py:312: in submit_training_job
+    gaps = P.backend_gaps(tp.parallelism)
+           ^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'backend_gaps'
+_ TestJobSurvivesRestart.test_a_submitted_job_completes_after_the_store_is_reopened _
+agents\tests\test_tools_stub.py:252: in test_a_submitted_job_completes_after_the_store_is_reopened
+    job = T.submit_training_job(
+agents\augur_agents\tools\training_tools.py:312: in submit_training_job
+    gaps = P.backend_gaps(tp.parallelism)
+           ^^^^^^^^^^^^^^
+E   AttributeError: module 'augur_agents.training.parallelism' has no attribute 'backend_gaps'
+============================== warnings summary ===============================
+agents\tests\test_servers_smoke.py:12
+  C:\Users\user\Desktop\my-files\projects\personal-projects\augur\agents\tests\test_servers_smoke.py:12: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+ERROR agents/tests/test_registry.py::test_default_roster_is_the_built_in_workers
+ERROR agents/tests/test_registry.py::test_default_roster_points_at_the_configured_ports
+ERROR agents/tests/test_registry.py::TestInlineRegistry::test_parses_name_equals_url_pairs
+ERROR agents/tests/test_registry.py::TestInlineRegistry::test_a_trailing_slash_is_stripped_so_card_url_is_well_formed
+ERROR agents/tests/test_registry.py::TestInlineRegistry::test_a_malformed_entry_is_skipped_not_fatal
+ERROR agents/tests/test_registry.py::TestInlineRegistry::test_blank_entries_are_ignored
+ERROR agents/tests/test_registry.py::TestInlineRegistry::test_a_duplicate_name_keeps_the_first
+ERROR agents/tests/test_registry.py::TestTomlRegistry::test_reads_the_agents_table_shape
+ERROR agents/tests/test_registry.py::TestTomlRegistry::test_reads_the_array_of_tables_shape
+ERROR agents/tests/test_registry.py::TestTomlRegistry::test_a_missing_file_yields_an_empty_roster_not_a_crash
+ERROR agents/tests/test_registry.py::TestTomlRegistry::test_malformed_toml_does_not_raise
+ERROR agents/tests/test_registry.py::TestTomlRegistry::test_a_non_string_url_is_skipped
+ERROR agents/tests/test_registry.py::test_inline_registry_wins_over_a_file - ...
+FAILED agents/tests/test_a2a_client.py::test_get_directory_is_cached - Attrib...
+FAILED agents/tests/test_parallelism.py::TestParameterCounts::test_gpt2_small_is_exact_with_a_real_intermediate_size
+FAILED agents/tests/test_parallelism.py::TestParameterCounts::test_llama_7b_is_close_with_a_real_intermediate_size
+FAILED agents/tests/test_parallelism.py::TestParameterCounts::test_the_playbook_shorthand_overestimates_llama
+FAILED agents/tests/test_parallelism.py::TestStepOneFitInMemory::test_under_10b_uses_a_single_technique
+FAILED agents/tests/test_parallelism.py::TestStepOneFitInMemory::test_10b_to_100b_combines_tp_with_zero3
+FAILED agents/tests/test_parallelism.py::TestStepOneFitInMemory::test_over_100b_adds_pipeline_and_drops_to_zero2
+FAILED agents/tests/test_parallelism.py::TestScaleThresholds::test_beyond_512_gpus_tensor_parallelism_takes_some_load
+FAILED agents/tests/test_parallelism.py::TestScaleThresholds::test_the_1024_gpu_reference_recipe
+FAILED agents/tests/test_parallelism.py::TestScaleThresholds::test_small_clusters_stay_on_plain_data_parallelism
+FAILED agents/tests/test_parallelism.py::test_long_sequences_get_context_parallelism
+FAILED agents/tests/test_parallelism.py::test_moe_gets_expert_parallelism - A...
+FAILED agents/tests/test_parallelism.py::TestAlwaysOnDefaults::test_selective_recompute_and_bf16_by_default[0.1-1]
+FAILED agents/tests/test_parallelism.py::TestAlwaysOnDefaults::test_selective_recompute_and_bf16_by_default[7-8]
+FAILED agents/tests/test_parallelism.py::TestAlwaysOnDefaults::test_selective_recompute_and_bf16_by_default[70-64]
+FAILED agents/tests/test_parallelism.py::TestBatchSizeArithmetic::test_gbs_equals_mbs_times_accum_times_dp
+FAILED agents/tests/test_parallelism.py::TestBatchSizeArithmetic::test_dp_consumes_the_gpus_left_after_the_other_axes
+FAILED agents/tests/test_parallelism.py::TestGpuPoorPath::test_a_run_that_will_not_fit_says_so
+FAILED agents/tests/test_parallelism.py::TestGpuPoorPath::test_memory_pressure_escalates_recomputation_first
+FAILED agents/tests/test_parallelism.py::TestMemoryModel::test_zero3_sharding_reduces_per_gpu_state
+FAILED agents/tests/test_parallelism.py::TestMemoryModel::test_unsharded_state_is_16_bytes_per_param
+FAILED agents/tests/test_parallelism.py::TestMemoryModel::test_recomputation_reduces_activation_memory
+FAILED agents/tests/test_parallelism.py::TestComputeModel::test_flops_follow_six_times_tokens_times_params
+FAILED agents/tests/test_parallelism.py::TestComputeModel::test_more_gpus_means_less_wall_clock
+FAILED agents/tests/test_parallelism.py::TestComputeModel::test_assumptions_are_always_returned
+FAILED agents/tests/test_parallelism.py::TestValidation::test_tp_above_8_is_rejected
+FAILED agents/tests/test_parallelism.py::TestValidation::test_tp_cannot_exceed_the_attention_head_count
+FAILED agents/tests/test_parallelism.py::TestValidation::test_axes_must_multiply_to_the_gpu_count
+FAILED agents/tests/test_parallelism.py::TestValidation::test_batch_arithmetic_must_be_consistent
+FAILED agents/tests/test_parallelism.py::TestValidation::test_zero3_with_pipeline_is_flagged
+FAILED agents/tests/test_parallelism.py::TestValidation::test_a_consistent_config_has_no_problems
+FAILED agents/tests/test_parallelism.py::TestBackendGaps::test_plain_zero3_is_runnable_today
+FAILED agents/tests/test_parallelism.py::TestBackendGaps::test_advanced_parallelism_is_reported_as_unsupported[tp-8-tensor]
+FAILED agents/tests/test_parallelism.py::TestBackendGaps::test_advanced_parallelism_is_reported_as_unsupported[pp-2-pipeline]
+FAILED agents/tests/test_parallelism.py::TestBackendGaps::test_advanced_parallelism_is_reported_as_unsupported[cp-2-context]
+FAILED agents/tests/test_parallelism.py::TestBackendGaps::test_advanced_parallelism_is_reported_as_unsupported[ep-4-expert]
+FAILED agents/tests/test_parallelism.py::TestBackendGaps::test_fp8_is_reported_as_unsupported
+FAILED agents/tests/test_pipeline_e2e.py::test_project_runs_from_objective_to_evaluation_report
+FAILED agents/tests/test_servers_smoke.py::test_the_cli_lists_the_roster_without_touching_the_network
+FAILED agents/tests/test_tools_stub.py::TestTrainingPlanning::test_recommend_parallelism_explains_every_choice
+FAILED agents/tests/test_tools_stub.py::TestTrainingPlanning::test_estimate_returns_a_cost_with_its_assumptions
+FAILED agents/tests/test_tools_stub.py::TestTrainingPlanning::test_validate_flags_a_plan_that_needs_an_unsupported_backend
+FAILED agents/tests/test_tools_stub.py::TestSubmitDoesNotBlock::test_submit_returns_before_the_run_finishes
+FAILED agents/tests/test_tools_stub.py::TestSubmitDoesNotBlock::test_a_plan_the_backend_cannot_run_is_refused_even_with_approval
+FAILED agents/tests/test_tools_stub.py::TestJobLifecycle::test_a_job_advances_to_completed_over_wall_clock
+FAILED agents/tests/test_tools_stub.py::TestJobLifecycle::test_a_completed_job_registers_an_artifact_with_lineage
+FAILED agents/tests/test_tools_stub.py::TestJobLifecycle::test_cancelling_a_queued_job_needs_no_approval
+FAILED agents/tests/test_tools_stub.py::TestJobLifecycle::test_the_loss_curve_decreases
+FAILED agents/tests/test_tools_stub.py::TestJobSurvivesRestart::test_a_submitted_job_completes_after_the_store_is_reopened
+============ 49 failed, 150 passed, 1 warning, 13 errors in 19.37s ============

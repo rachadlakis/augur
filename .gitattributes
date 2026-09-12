@@ -1,0 +1,27 @@
+# This repo is developed on Windows (core.autocrlf=true is common) but trains on
+# Linux, so line endings are pinned explicitly rather than left to autodetection.
+
+# Shell scripts run on Linux GPU workers. A CRLF here breaks the shebang with
+# "bad interpreter: /bin/bash^M", which is an unpleasant thing to debug on a
+# remote box.
+*.sh    text eol=lf
+
+# Binary assets must never be line-ending converted. Git usually detects these
+# correctly, but `git add` still warns about them, which is a sign not to rely
+# on the heuristic.
+*.pdf   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.safetensors binary
+*.pt    binary
+*.bin   binary
+
+# Lockfiles should be byte-identical across platforms so a diff means a real
+# dependency change.
+uv.lock text eol=lf
+
+# Generated: collapse in diffs and exclude from language stats.
+uv.lock linguist-generated=true

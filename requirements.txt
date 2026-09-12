@@ -1,0 +1,4 @@
+pydantic>=2.0
+pydantic-settings>=2.0
+python-binance>=1.0.19
+alpaca-py>=0.30.0

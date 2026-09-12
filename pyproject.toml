@@ -1,0 +1,112 @@
+## =============================================================================
+## Augur Tensors — uv workspace root
+##
+## This root is a *virtual* project (`package = false`): it is never built or
+## installed itself, it only owns the workspace, the shared dependency groups,
+## and the tool config. The actual code lives in two places:
+##
+##   agents/     -> the `augur-agents` workspace member (ADK + A2A agent layer)
+##   dist_kit/   -> a self-contained, copy-pasteable distributed-training kit
+##                  that keeps its OWN requirements.txt on purpose (see the
+##                  `training` group below and dist_kit/README.md)
+##
+## Commands:
+##   uv sync                        # agent platform + dev tools
+##   uv sync --group training       # + the Hugging Face / PEFT training stack
+##   uv run pytest agents/tests
+##   uv run pytest dist_kit/tests -m "not smoke"
+##
+## PyTorch is deliberately NOT locked here: the right wheel depends on the
+## worker's CUDA runtime and comes from PyTorch's own index. Install it
+## separately, matching the machine:
+##   uv pip install torch --index-url https://download.pytorch.org/whl/cu124
+## =============================================================================
+
+[project]
+name = "mobius-tensors"
+version = "0.1.0"
+description = "Agentic AI R&D and model-training platform (ADK + A2A + MCP)"
+readme = "README.md"
+requires-python = ">=3.10,<3.13"
+
+# The root pulls in the agent layer, so a bare `uv sync` gives you a working
+# control plane. The heavy ML stack is opt-in via the `training` group.
+dependencies = [
+    "augur-agents",
+]
+
+[tool.uv]
+# Virtual root: nothing to build here, dist_kit is imported from the repo root
+# (dist_kit/tests/conftest.py already puts the root on sys.path) and must stay
+# copy-pasteable rather than becoming an installed package.
+package = false
+
+[tool.uv.workspace]
+members = ["agents"]
+
+[tool.uv.sources]
+augur-agents = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.6",
+]
+
+# The dist_kit training stack, minus torch. Kept as ranges here so the lock can
+# resolve; dist_kit/requirements.txt carries the exact pins for the copy-paste
+# story and is regenerated from the lock:
+#   uv export --only-group training --no-hashes -o dist_kit/requirements.txt
+training = [
+    "pyyaml>=6.0",
+    "python-dotenv>=1.0",
+    "numpy>=1.26",
+    "transformers>=4.44",
+    "accelerate>=0.34",
+    "huggingface-hub>=0.25",
+    "safetensors>=0.4",
+    "datasets>=2.20",
+    "peft>=0.13",
+    "bitsandbytes>=0.44 ; sys_platform == 'linux'",
+    # setup_dist_process_group probes NVLink via NVML to pick the right NCCL
+    # transport and refuses to guess when this is missing.
+    "nvidia-ml-py>=12.5",
+    # Experiment logging
+    "wandb>=0.18",
+    "tensorboard>=2.17",
+]
+
+## =============================================================================
+## Tooling
+## =============================================================================
+
+[tool.pytest.ini_options]
+# Both test trees are opt-in by path; nothing is collected repo-wide by default
+# because dist_kit's smoke tests want a GPU. Run them explicitly:
+#   uv run pytest agents/tests
+#   uv run pytest dist_kit/tests -m "not smoke"
+asyncio_mode = "auto"
+addopts = "-ra -q"
+markers = [
+    "smoke: subprocess training runs; ddp/fsdp need a GPU",
+    "integration: needs a warm Hugging Face cache",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::UserWarning:google.adk.features._feature_decorator",
+    # ADK's A2A integration is flagged [EXPERIMENTAL]; we know, and it is the
+    # supported path. One line per turn otherwise.
+    "ignore:.*EXPERIMENTAL.*:UserWarning",
+]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+# Deliberately narrow, matching the agent kit's house style: pyflakes (real bugs
+# — undefined names, unused imports) and import sorting. Not pycodestyle
+# line-length: agent instructions and docstrings are intentionally long.
+select = ["F", "I"]
+
