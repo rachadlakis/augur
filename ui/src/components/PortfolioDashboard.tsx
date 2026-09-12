@@ -1,6 +1,30 @@
 import React from 'react'
-import { PortfolioState, Position } from '../types'
 import './PortfolioDashboard.css'
+
+interface Position {
+  symbol: string
+  quantity: number
+  entry_price: number
+  current_price: number
+  unrealized_pnl: number
+  unrealized_pnl_pct: number
+  side: string
+  thesis_valid: boolean
+  stop_price?: number
+  target_price?: number
+}
+
+interface PortfolioState {
+  account_equity: number
+  cash: number
+  buying_power: number
+  total_pnl: number
+  total_pnl_pct: number
+  max_drawdown: number
+  positions: Position[]
+  recent_trades: any[]
+  timestamp: string
+}
 
 interface Props {
   portfolio: PortfolioState

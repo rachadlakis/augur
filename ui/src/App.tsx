@@ -1,10 +1,29 @@
 import React, { useState, useEffect, useRef } from 'react'
-// import './App-new.css'
-// import { PortfolioDashboard } from './components/PortfolioDashboard'
-// import { TradeHistory } from './components/TradeHistory'
-// import { ChatInterface } from './components/ChatInterface'
-// import { AlertCenter } from './components/AlertCenter'
-import { Position, Trade, Alert, PortfolioState } from './types'
+import './App-new.css'
+import { PortfolioDashboard } from './components/PortfolioDashboard'
+import { TradeHistory } from './components/TradeHistory'
+import { ChatInterface } from './components/ChatInterface'
+import { AlertCenter } from './components/AlertCenter'
+// Inline types - avoiding import from types.ts which seems to cause issues
+interface PortfolioState {
+  account_equity: number
+  cash: number
+  buying_power: number
+  total_pnl: number
+  total_pnl_pct: number
+  max_drawdown: number
+  positions: any[]
+  recent_trades: any[]
+  timestamp: string
+}
+
+interface Alert {
+  alert_type: string
+  symbol?: string
+  message: string
+  severity: string
+  timestamp: string
+}
 
 function App() {
   const [portfolio, setPortfolio] = useState<PortfolioState>({
@@ -22,7 +41,7 @@ function App() {
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected' | 'connecting'>('connecting')
   const wsRef = useRef<WebSocket | null>(null)
-  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // WebSocket connection management
   useEffect(() => {

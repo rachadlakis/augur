@@ -1,6 +1,13 @@
 import React, { useState } from 'react'
-import { Alert } from '../types'
 import './AlertCenter.css'
+
+interface Alert {
+  alert_type: string
+  symbol?: string
+  message: string
+  severity: string
+  timestamp: string
+}
 
 interface Props {
   alerts: Alert[]

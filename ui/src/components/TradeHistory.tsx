@@ -1,6 +1,20 @@
 import React from 'react'
-import { Trade } from '../types'
 import './TradeHistory.css'
+
+interface Trade {
+  trade_id: string
+  symbol: string
+  entry_price: number
+  exit_price: number
+  quantity: number
+  side: string
+  pnl: number
+  pnl_pct: number
+  entry_time: string
+  exit_time: string
+  thesis_status: string
+  analysis_tags: string[]
+}
 
 interface Props {
   trades: Trade[]
