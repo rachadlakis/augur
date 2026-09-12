@@ -40,7 +40,8 @@ def _short_args(args: dict[str, Any], limit: int = 160) -> str:
 
 
 def _call_key(ctx: Any) -> str:
-    return getattr(ctx, "function_call_id", None) or getattr(ctx, "invocation_id", "?")
+    key = getattr(ctx, "function_call_id", None) or getattr(ctx, "invocation_id", "?")
+    return str(key)
 
 
 def log_before_tool(

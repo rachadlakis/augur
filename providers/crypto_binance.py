@@ -42,14 +42,18 @@ class BinanceProvider(ExecutionProvider):
 
     def place_order(self, order: OrderRequest) -> OrderResult:
         try:
-            resp = self._client.create_order(
-                symbol=order.symbol,
-                side=order.side.value,
-                type=order.order_type.value,
-                quantity=order.quantity,
-                price=order.limit_price,
-                stopPrice=order.stop_price,
-            )
+            kwargs = {
+                "symbol": order.symbol,
+                "side": order.side.value,
+                "type": order.order_type.value,
+                "quantity": order.quantity,
+            }
+            if order.limit_price is not None:
+                kwargs["price"] = float(order.limit_price)
+            if order.stop_price is not None:
+                kwargs["stopPrice"] = float(order.stop_price)
+            
+            resp = self._client.create_order(**kwargs)
         except BinanceAPIException as e:
             return OrderResult(
                 order_id="", status="REJECTED",

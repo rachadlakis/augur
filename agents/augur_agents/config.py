@@ -101,6 +101,7 @@ def _litellm_extra_kwargs() -> dict:
     hand it to LiteLlm directly when the vars are present.
     """
     kw: dict = {}
+    pairs: tuple[tuple[str, str], ...] = ()
     if LLM_PROVIDER == "azure":
         pairs = (("AZURE_API_BASE", "api_base"),
                  ("AZURE_API_VERSION", "api_version"),
@@ -113,8 +114,6 @@ def _litellm_extra_kwargs() -> dict:
         # lets you point the anthropic provider at an Anthropic-compatible
         # gateway (e.g. Azure AI Foundry's /anthropic endpoint) from .env
         pairs = (("ANTHROPIC_API_BASE", "api_base"),)
-    else:
-        pairs = ()
     for env_name, arg in pairs:
         val = os.getenv(env_name)
         if val:

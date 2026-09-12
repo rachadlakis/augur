@@ -30,31 +30,52 @@ class AlpacaProvider(ExecutionProvider):
         except APIError as e:
             raise DataUnavailable(f"Alpaca account fetch failed: {e}") from e
 
+        # Handle both TradeAccount object and dict responses
+        if isinstance(acct, dict):
+            equity = float(acct.get("equity", 0)) if acct.get("equity") is not None else 0.0
+            cash = float(acct.get("cash", 0)) if acct.get("cash") is not None else 0.0
+            buying_power = float(acct.get("buying_power", 0)) if acct.get("buying_power") is not None else 0.0
+        else:
+            equity = float(acct.equity) if acct.equity is not None else 0.0
+            cash = float(acct.cash) if acct.cash is not None else 0.0
+            buying_power = float(acct.buying_power) if acct.buying_power is not None else 0.0
+
+        positions = self._client.get_all_positions()
+        position_dict = {}
+        for p in positions:
+            symbol = p.get("symbol") if isinstance(p, dict) else p.symbol
+            qty = p.get("qty") if isinstance(p, dict) else p.qty
+            if symbol and qty is not None:
+                position_dict[symbol] = float(qty)
+
         return AccountSnapshot(
-            equity=float(acct.equity),
-            cash=float(acct.cash),
-            buying_power=float(acct.buying_power),
-            positions={p.symbol: float(p.qty) for p in positions},
+            equity=equity,
+            cash=cash,
+            buying_power=buying_power,
+            positions=position_dict,
         )
 
     def place_order(self, order: OrderRequest) -> OrderResult:
         side = AlpacaSide.BUY if order.side.value == "BUY" else AlpacaSide.SELL
 
         try:
+            req: MarketOrderRequest | LimitOrderRequest | StopOrderRequest
             if order.order_type == OrderType.MARKET:
                 req = MarketOrderRequest(
                     symbol=order.symbol, qty=order.quantity,
                     side=side, time_in_force=TimeInForce.DAY,
                 )
             elif order.order_type == OrderType.LIMIT:
+                limit_price = float(order.limit_price) if order.limit_price is not None else 0.0
                 req = LimitOrderRequest(
                     symbol=order.symbol, qty=order.quantity, side=side,
-                    time_in_force=TimeInForce.DAY, limit_price=order.limit_price,
+                    time_in_force=TimeInForce.DAY, limit_price=limit_price,
                 )
             else:  # STOP_MARKET / STOP_LIMIT
+                stop_price = float(order.stop_price) if order.stop_price is not None else 0.0
                 req = StopOrderRequest(
                     symbol=order.symbol, qty=order.quantity, side=side,
-                    time_in_force=TimeInForce.DAY, stop_price=order.stop_price,
+                    time_in_force=TimeInForce.DAY, stop_price=stop_price,
                 )
             resp = self._client.submit_order(req)
         except APIError as e:
