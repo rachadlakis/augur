@@ -43,8 +43,13 @@ class AlpacaProvider(ExecutionProvider):
         positions = self._client.get_all_positions()
         position_dict = {}
         for p in positions:
-            symbol = p.get("symbol") if isinstance(p, dict) else p.symbol
-            qty = p.get("qty") if isinstance(p, dict) else p.qty
+            if isinstance(p, dict):
+                symbol = p.get("symbol")
+                qty = p.get("qty")
+            else:
+                # Handle Position object
+                symbol = getattr(p, "symbol", None)
+                qty = getattr(p, "qty", None)
             if symbol and qty is not None:
                 position_dict[symbol] = float(qty)
 
@@ -84,11 +89,24 @@ class AlpacaProvider(ExecutionProvider):
                 filled_qty=0.0, avg_fill_price=None, raw_error=str(e),
             )
 
+        # Handle both Order object and dict responses
+        if isinstance(resp, dict):
+            order_id = str(resp.get("id", ""))
+            status = str(resp.get("status", ""))
+            filled_qty = float(resp.get("filled_qty") or 0.0)
+            filled_avg = resp.get("filled_avg_price")
+            avg_fill_price = float(filled_avg) if filled_avg is not None else None
+        else:
+            order_id = str(resp.id)
+            status = str(resp.status)
+            filled_qty = float(resp.filled_qty or 0.0)
+            avg_fill_price = float(resp.filled_avg_price) if resp.filled_avg_price else None
+
         return OrderResult(
-            order_id=str(resp.id),
-            status=str(resp.status),
-            filled_qty=float(resp.filled_qty or 0.0),
-            avg_fill_price=float(resp.filled_avg_price) if resp.filled_avg_price else None,
+            order_id=order_id,
+            status=status,
+            filled_qty=filled_qty,
+            avg_fill_price=avg_fill_price,
         )
 
     def cancel_order(self, order_id: str) -> bool:
@@ -106,6 +124,9 @@ class AlpacaProvider(ExecutionProvider):
     def is_market_open(self, symbol: str) -> bool:
         try:
             clock = self._client.get_clock()
-            return bool(clock.is_open)
+            if isinstance(clock, dict):
+                return bool(clock.get("is_open", False))
+            else:
+                return bool(clock.is_open)
         except APIError as e:
             raise DataUnavailable(f"Alpaca clock fetch failed: {e}") from e

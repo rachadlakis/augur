@@ -30,7 +30,7 @@ Augur is a **profit-focused multi-agent trading system** that combines specialis
 
 Automatically route specialist agents based on asset class:
 
-```
+```python
 Crypto (BTC, ETH, SOL):
   - derivatives (crowding, basis)
   - macro (DXY, Fed, flows)
@@ -57,35 +57,41 @@ Equity (AAPL, MSFT, GOOGL):
 Each specialist returns structured JSON with signal + confidence + evidence:
 
 #### 2.1 TechnicalAnalyst
+
 - Analyzes OHLC, volume, RSI, MACD, moving averages
 - Returns: `{signal, confidence, trend, momentum, support, resistance, evidence, risk_flags}`
 - Test: `test_technical_analyst_bullish_signal` ✓
 
 #### 2.2 OnChainAnalyst (Crypto only)
+
 - Analyzes whale moves, funding rates, open interest
 - Returns: `{signal, confidence, on_chain_signal, funding_health, whale_direction, evidence, risk_flags}`
 - Flags crowding, unhealthy funding, whale activity reversals
 - Test: `test_onchain_analyst_handles_uncertainty` ✓
 
 #### 2.3 NewsSentimentAnalyst
+
 - Analyzes headlines by source, sentiment, impact
 - Returns: `{signal, confidence, sentiment_score, high_impact_news, evidence, risk_flags}`
 - Requires positive evidence (not just low-evidence silence)
 - Test: `test_news_analyst_requires_evidence` ✓
 
 #### 2.4 DerivativesAnalyst
+
 - Analyzes put/call ratios, open interest concentration, basis
 - Returns: `{signal, confidence, crowding_risk, options_flow, basis_status, evidence, risk_flags}`
 - Penalizes crowded positions
 - Test: `test_derivatives_analyst_crowding_risk` ✓
 
 #### 2.5 MacroAnalyst
+
 - Analyzes DXY, Fed policy, economic horizon
 - Returns: `{signal, confidence, macro_environment, dxy_impact, fed_stance, evidence, risk_flags}`
 - Conservative on short horizons (high uncertainty)
 - Test: `test_macro_analyst_conservative_short_horizon` ✓
 
 #### 2.6 FundamentalsAnalyst (Equity only)
+
 - Analyzes earnings growth, revenue, PE relative to sector, guidance, insider activity
 - Returns: `{signal, confidence, earnings_growth, revenue_growth, pe_relative, guidance_trend, insider_activity, evidence, risk_flags}`
 - **Flags unreliable data:** >100% earnings growth marked as `unreliable_earnings` (absurd data)
@@ -114,6 +120,7 @@ Each specialist returns structured JSON with signal + confidence + evidence:
 **File:** [agents/augur_agents/trading/risk.py](agents/augur_agents/trading/risk.py)
 
 **Principles:**
+
 - Position size = (equity × max_risk_fraction) / stop_distance_fraction
   - Example: $100k account, 2% max risk, 2% stop distance → $50k position
   - Example: $100k account, 2% max risk, 1% stop distance → $100k position
@@ -133,6 +140,7 @@ Each specialist returns structured JSON with signal + confidence + evidence:
 **File:** [agents/augur_agents/trading/execution.py](agents/augur_agents/trading/execution.py)
 
 **Pre-execution checks:**
+
 - Market open (equities)/exchange healthy (crypto)
 - Spread < threshold
 - Slippage < threshold
@@ -165,10 +173,12 @@ Each specialist returns structured JSON with signal + confidence + evidence:
 **File:** [agents/augur_agents/trading/journal.py](agents/augur_agents/trading/journal.py)
 
 **Recording:**
+
 - Trade ID, symbol, entry, exit, size, side, P&L, return %
 - Calculates: PnL = (exit - entry) × size × direction_sign
 
 **Review:**
+
 - Tags: `good_execution`, `thesis_invalidated`, `wide_stop`, `aligned_signals`, etc.
 - Outcome: `profitable`, `loss`, `flat`
 - Enables win-rate vs confidence calibration
@@ -182,6 +192,7 @@ Each specialist returns structured JSON with signal + confidence + evidence:
 **File:** [agents/augur_agents/trading/backtest.py](agents/augur_agents/trading/backtest.py)
 
 **Metrics calculated:**
+
 - **total_trades:** Count of executed trades
 - **win_rate (%):** Profitable / Total
 - **avg_win / avg_loss:** Mean PnL on winning/losing trades
@@ -200,10 +211,12 @@ Each specialist returns structured JSON with signal + confidence + evidence:
 **File:** [agents/augur_agents/trading/backtest.py](agents/augur_agents/trading/backtest.py)
 
 **Baselines:**
+
 - **Buy-and-Hold:** Entry at start price, exit at end price, hold throughout
 - **Simple MA Crossover:** 20-period vs 50-period moving average (proof-of-concept)
 
 **Comparison metrics:**
+
 - System return % vs baseline return %
 - Outperformance gap
 - Drawdown improvement
@@ -226,6 +239,7 @@ DATA_UNAVAILABLE = {
 ```
 
 Providers (stubs):
+
 - `MarketDataProvider`: OHLCV, bid-ask spread, liquidity
 - `NewsProvider`: Headlines with source, sentiment, impact
 - `OnChainProvider`: Whale moves, funding, open interest
@@ -264,6 +278,7 @@ decision = pipeline.evaluate(
 ## Test Suite Summary
 
 ### test_trading_core.py (6 tests)
+
 - `test_position_size_formula` - Risk sizing calculation ✓
 - `test_risk_manager_rejects_bad_trade` - Risk veto logic ✓
 - `test_orchestrator_reduces_conflict` - Conflict detection ✓
@@ -272,6 +287,7 @@ decision = pipeline.evaluate(
 - `test_trade_journal_records_outcome` - Trade recording ✓
 
 ### test_specialists.py (13 tests)
+
 - `test_technical_analyst_bullish_signal` ✓
 - `test_onchain_analyst_handles_uncertainty` ✓
 - `test_news_analyst_requires_evidence` ✓
@@ -286,7 +302,9 @@ decision = pipeline.evaluate(
 - `test_edge_case_no_data` ✓
 - `test_orchestrator_alignment` ✓
 
-**Total: 19 tests, 100% passing (0.13s)**
+### Summary
+
+Total: 19 tests, 100% passing (0.13s)
 
 ---
 
@@ -307,7 +325,7 @@ Running `python demo_trading_system.py` shows all 7 phases working:
 ## Key Achievements vs Brief
 
 | Requirement | Implementation | Status |
-|---|---|---|
+| --- | --- | --- |
 | Asset-class awareness | AssetConfig routing crypto/equity agents | ✓ |
 | Multi-specialist decision | 6 analyzers per asset type | ✓ |
 | Conflict detection | NO_TRADE on disagreement | ✓ |
@@ -325,6 +343,7 @@ Running `python demo_trading_system.py` shows all 7 phases working:
 ## Next Steps for Production
 
 1. **Data Integration**
+
    - Connect MarketDataProvider to Binance/Alpaca
    - Connect NewsProvider to Manta Ray / Facteus
    - Connect OnChainProvider to Nansen / Glassnode
@@ -332,21 +351,25 @@ Running `python demo_trading_system.py` shows all 7 phases working:
    - Connect MacroProvider to FRED / Bloomberg
 
 2. **Order Management**
+
    - Implement limit order with time-in-force (GTD, IOC)
    - Add slippage model calibrated from live fills
    - Handle partial fills and rejections
 
 3. **Position Management**
+
    - Live P&L tracking
    - Thesis invalidation triggers (webhook callbacks)
    - Alert system (email/Slack)
 
 4. **Optimization**
+
    - Calibrate position size based on historical Sharpe
    - Calibrate confidence thresholds per specialist
    - Learn conflict penalty from live trade outcomes
 
 5. **Monitoring**
+
    - Live trade dashboard (entry, exit, P&L, thesis status)
    - Performance dashboard (daily/weekly metrics vs baseline)
    - Alert on risk limit violations
@@ -355,7 +378,7 @@ Running `python demo_trading_system.py` shows all 7 phases working:
 
 ## File Structure
 
-```
+```text
 agents/
 ├── augur_agents/
 │   ├── trading/
@@ -386,6 +409,7 @@ agents/
 All configuration is in agent code (no external config files):
 
 **Risk Manager Defaults:**
+
 - max_exposure_pct: 5%
 - max_daily_loss_pct: 2%
 - min_reward_risk_ratio: 2.0
@@ -393,12 +417,14 @@ All configuration is in agent code (no external config files):
 - min_liquidity_pct: 0.8
 
 **Orchestrator Defaults:**
+
 - conflict_threshold: 0.3 (penalty that triggers NO_TRADE)
 - evidence_quality_weight: 0.3
 - data_freshness_weight: 0.2
 - confidence_weight: 0.5
 
 **Position Monitor Defaults:**
+
 - volatility_spike_review: True
 - high_impact_news_review: True
 
@@ -421,6 +447,7 @@ All configuration is in agent code (no external config files):
 ## Contact & Support
 
 For questions about implementation:
+
 - Review [docs/plan.md](docs/plan.md) for architecture overview
 - See [agents/AGENTS.md](agents/AGENTS.md) for agent communication patterns
 - Refer to docstrings in [agents/augur_agents/trading/](agents/augur_agents/trading/) for API details

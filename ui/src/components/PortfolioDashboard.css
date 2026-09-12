@@ -1,0 +1,149 @@
+.portfolio-dashboard {
+  background: #1e293b;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 20px;
+  color: #e2e8f0;
+}
+
+.portfolio-dashboard h2 {
+  margin-top: 0;
+  margin-bottom: 20px;
+  font-size: 1.5rem;
+  color: #f1f5f9;
+}
+
+.portfolio-dashboard h3 {
+  margin-top: 20px;
+  margin-bottom: 15px;
+  font-size: 1.1rem;
+  color: #cbd5e1;
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 15px;
+  margin-bottom: 20px;
+}
+
+.metric-card {
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  padding: 15px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.metric-card .label {
+  font-size: 0.85rem;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.metric-card .value {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #f1f5f9;
+  font-variant-numeric: tabular-nums;
+}
+
+.positions-table {
+  overflow-x: auto;
+  border-radius: 6px;
+  border: 1px solid #334155;
+}
+
+.positions-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.positions-table thead {
+  background: #0f172a;
+  border-bottom: 2px solid #334155;
+}
+
+.positions-table th {
+  padding: 12px;
+  text-align: left;
+  font-weight: 600;
+  color: #cbd5e1;
+  text-transform: uppercase;
+  font-size: 0.8rem;
+  letter-spacing: 0.5px;
+}
+
+.positions-table tbody tr {
+  border-bottom: 1px solid #334155;
+  transition: background 0.2s;
+}
+
+.positions-table tbody tr:hover {
+  background: #1e293b;
+}
+
+.positions-table tbody tr.gain {
+  --gain-color: #10b981;
+}
+
+.positions-table tbody tr.loss {
+  --gain-color: #ef4444;
+}
+
+.positions-table td {
+  padding: 12px;
+  color: #e2e8f0;
+}
+
+.positions-table .symbol {
+  font-weight: 600;
+  color: #38bdf8;
+}
+
+.positions-table .side {
+  padding: 4px 8px;
+  border-radius: 3px;
+  font-weight: 600;
+  background: rgba(56, 189, 248, 0.1);
+  text-align: center;
+  width: fit-content;
+}
+
+.positions-table .pnl {
+  color: var(--gain-color);
+  font-weight: 500;
+}
+
+.positions-table .thesis {
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 3px;
+  display: inline-block;
+}
+
+.positions-table .thesis.valid {
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.positions-table .thesis.invalid {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.positions-table .actions {
+  display: flex;
+  gap: 8px;
+}
+
+.empty-state {
+  color: #64748b;
+  font-style: italic;
+  padding: 20px;
+  text-align: center;
+}

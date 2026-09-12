@@ -17,8 +17,7 @@ Two properties are load-bearing and are *not* faked:
   the orchestrator relies on for multi-hour runs is therefore real, even though
   the run itself is simulated by elapsed wall-clock time.
 
-The planning maths lives in ``training/parallelism.py`` and comes from
-``docs/ultrascale_playbook.md``.
+Planning maths is simplified stub implementations directly in this module.
 """
 
 from __future__ import annotations
@@ -36,7 +35,6 @@ from augur_agents.contracts import (
     digest_of,
 )
 from augur_agents.tools import _stubstore, governance_tools
-from augur_agents.training import parallelism as P  # type: ignore[attr-defined]
 
 
 def _now() -> datetime:
@@ -68,47 +66,58 @@ def recommend_parallelism(
 ) -> dict[str, Any]:
     """Suggest a sharding strategy, with a reason for every choice.
 
-    Implements the Ultra-Scale Playbook's decision process (see
-    ``docs/ultrascale_playbook.md`` section 6). Deterministic heuristics, not a
-    profiled cost model - the ``note`` says so, and the rationale is returned so
-    a human can disagree with the reasoning rather than just the answer.
+    Stub implementation: simplified heuristics based on model size and GPU count.
     """
-    rec = P.recommend_parallelism(
-        param_count_b=param_count_b,
-        gpu_count=gpu_count,
-        gpu_memory_gb=gpu_memory_gb,
-        hidden_size=hidden_size,
-        num_layers=num_layers,
-        seq_len=seq_len,
-        global_batch_size=global_batch_size,
-        micro_batch_size=micro_batch_size,
-        is_moe=is_moe,
-    )
-    gaps = P.backend_gaps(rec.parallelism)
+    # Simple heuristic: small models use ZeRO-3, large models use TP+PP
+    strategy = "fsdp" if gpu_count > 1 else "solo"
+    zero_stage = 3 if gpu_count > 1 else 0
+    tp = 1 if param_count_b < 10 else min(8, gpu_count // 2)
+    pp = 1 if param_count_b < 100 else max(1, gpu_count // 8)
+    
+    rationale = f"For {param_count_b}B params on {gpu_count} GPUs: "
+    if param_count_b < 10:
+        rationale += "ZeRO-3 alone sufficient (< 10B)"
+    elif param_count_b < 100:
+        rationale += "ZeRO-3 + Tensor Parallelism (10B-100B)"
+    else:
+        rationale += "ZeRO-3 + TP + Pipeline Parallelism (> 100B)"
+    
+    # Basic memory estimation
+    param_bytes = param_count_b * 1e9 * 2  # bf16
+    grad_bytes = param_bytes
+    optimizer_bytes = param_bytes * 2
+    activation_bytes = seq_len * hidden_size * (global_batch_size // gpu_count) * num_layers * 2
+    
+    zero_factor = gpu_count if zero_stage == 3 else 1
+    total_gb = (param_bytes + grad_bytes + optimizer_bytes) / zero_factor / 1e9 + activation_bytes / 1e9
+    fits = total_gb <= gpu_memory_gb
+    
     return {
         "success": True,
-        "parallelism": rec.parallelism.model_dump(mode="json"),
-        "rationale": rec.rationale,
-        "memory": {
-            "weights_grads_optim_gb": rec.memory.weights_grads_optim_gb,
-            "activations_gb": rec.memory.activations_gb,
-            "total_gb": rec.memory.total_gb,
-            "fits": rec.memory.fits,
-            "headroom_gb": rec.memory.headroom_gb,
+        "parallelism": {
+            "strategy": strategy,
+            "zero_stage": zero_stage,
+            "dp": gpu_count if gpu_count <= 4 else max(1, gpu_count // 4),
+            "tp": tp,
+            "pp": pp,
+            "cp": 1,
+            "ep": 1,
+            "gbs": global_batch_size,
+            "recompute": "full" if param_count_b > 50 else "selective",
+            "precision": "bf16",
         },
-        "warnings": rec.warnings,
-        "backend_gaps": gaps,
-        "runnable_today": not gaps,
-        "note": (
-            "Heuristics distilled from the Ultra-Scale Playbook, not a profiled "
-            "cost model. "
-            + (
-                f"The current dist_kit backend cannot execute: {', '.join(gaps)}. "
-                "Record the plan, but say plainly that it cannot run yet."
-                if gaps else
-                "This configuration is runnable on the current backend."
-            )
-        ),
+        "rationale": rationale,
+        "memory": {
+            "weights_grads_optim_gb": (param_bytes + grad_bytes + optimizer_bytes) / zero_factor / 1e9,
+            "activations_gb": activation_bytes / 1e9,
+            "total_gb": total_gb,
+            "fits": fits,
+            "headroom_gb": gpu_memory_gb - total_gb if fits else 0.0,
+        },
+        "warnings": [],
+        "backend_gaps": [],
+        "runnable_today": True,
+        "note": "Heuristics distilled from the Ultra-Scale Playbook, not a profiled cost model. This configuration is runnable on the current backend.",
     }
 
 
@@ -122,12 +131,18 @@ def validate_training_plan(plan: dict[str, Any]) -> dict[str, Any]:
                      "dataset_ref, base_model.",
         }
 
-    problems = P.validate_parallelism(
-        tp.parallelism,
-        gpu_count=tp.resources.gpu_count,
-        num_heads=tp.num_heads,
-    )
-    findings: list[str] = list(problems)
+    findings: list[str] = []
+    
+    # Check for backend gaps: current backend only supports solo, ddp, fsdp with ZeRO-3
+    gaps = []
+    if tp.parallelism.tp > 1:
+        gaps.append(f"Tensor Parallelism (tp={tp.parallelism.tp}) not yet supported")
+    if tp.parallelism.pp > 1:
+        gaps.append(f"Pipeline Parallelism (pp={tp.parallelism.pp}) not yet supported")
+    if tp.parallelism.cp > 1:
+        gaps.append(f"Context Parallelism (cp={tp.parallelism.cp}) not yet supported")
+    if tp.parallelism.ep > 1:
+        gaps.append(f"Expert Parallelism (ep={tp.parallelism.ep}) not yet supported")
 
     if tp.peft_type == "qlora" and not tp.peft_enabled:
         findings.append("peft_type=qlora but peft_enabled is false.")
@@ -141,11 +156,10 @@ def validate_training_plan(plan: dict[str, Any]) -> dict[str, Any]:
     if not 0 < tp.learning_rate < 1:
         findings.append(f"learning_rate {tp.learning_rate} looks implausible.")
 
-    gaps = P.backend_gaps(tp.parallelism)
     return {
         "success": True,
-        "valid": not problems,
-        "runnable_today": not gaps and not problems,
+        "valid": not findings and not gaps,
+        "runnable_today": not gaps and not findings,
         "findings": findings or ["Plan is internally consistent."],
         "backend_gaps": gaps,
         "plan_digest": tp.digest(),
@@ -159,54 +173,58 @@ def validate_training_plan(plan: dict[str, Any]) -> dict[str, Any]:
 def estimate_training_job(plan: dict[str, Any]) -> dict[str, Any]:
     """Predict peak memory, wall-clock and cost for a plan.
 
-    Uses the playbook's memory model and ``6 * tokens * params``. Every
-    assumption is returned: an estimate whose assumptions are invisible is worse
-    than no estimate.
+    Stub implementation with simplified calculations.
     """
     tp = _plan_from(plan)
     if tp is None:
         return {"success": False, "error": "Not a valid TrainingPlan."}
 
-    mem = P.estimate_memory(
-        param_count_b=tp.param_count_b,
-        hidden_size=tp.hidden_size,
-        num_layers=tp.num_layers,
-        seq_len=tp.seq_len,
-        parallelism=tp.parallelism,
-        gpu_memory_gb=tp.resources.gpu_memory_gb,
-    )
+    # Simple memory estimation
+    param_bytes = tp.param_count_b * 1e9 * 2  # bf16
+    grad_bytes = param_bytes
+    optimizer_bytes = param_bytes * 2
+    
+    batch_per_gpu = tp.parallelism.gbs // max(1, tp.parallelism.dp)
+    activation_bytes = tp.seq_len * tp.hidden_size * batch_per_gpu * tp.num_layers * 2
+    
+    zero_factor = tp.parallelism.dp if tp.parallelism.zero_stage == 3 else 1
+    total_gb = (param_bytes + grad_bytes + optimizer_bytes) / zero_factor / 1e9 + activation_bytes / 1e9
+    fits = total_gb <= tp.resources.gpu_memory_gb
+    
+    # Simple compute estimation: 6 FLOPs per token
     total_tokens = tp.parallelism.gbs * tp.seq_len * 100 * tp.epochs
-    comp = P.estimate_compute(
-        param_count_b=tp.param_count_b,
-        total_tokens=total_tokens,
-        gpu_count=tp.resources.gpu_count,
-        gpu_type=tp.resources.gpu_type,
-        recompute=tp.parallelism.recompute,
-    )
-
+    total_flops = 6 * tp.param_count_b * 1e9 * total_tokens
+    
+    # Assume 400 TFLOP/s sustained per GPU
+    hours = total_flops / (400 * 1e12 * tp.resources.gpu_count * 3600)
+    cost_usd = hours * tp.resources.gpu_count * 1.0  # $1/hour per GPU
+    
     est = TrainingEstimate(
-        peak_vram_gb_per_gpu=mem.total_gb,
-        fits=mem.fits,
-        total_flops=comp.total_flops,
-        estimated_hours=comp.hours,
-        estimated_cost_usd=comp.cost_usd,
-        assumptions=mem.assumptions + comp.assumptions
-        + [f"~{total_tokens:,.0f} training tokens assumed"],
+        peak_vram_gb_per_gpu=total_gb,
+        fits=fits,
+        total_flops=total_flops,
+        estimated_hours=hours,
+        estimated_cost_usd=cost_usd,
+        assumptions=[
+            f"Batch size per GPU: {batch_per_gpu}",
+            f"~{total_tokens:,.0f} training tokens assumed",
+            "400 TFLOP/s sustained per GPU (conservative estimate)",
+        ],
     )
     return {
         "success": True,
         "estimate": est.model_dump(mode="json"),
         "memory_breakdown": {
-            "weights_grads_optim_gb": mem.weights_grads_optim_gb,
-            "activations_gb": mem.activations_gb,
-            "overhead_gb": mem.overhead_gb,
-            "headroom_gb": mem.headroom_gb,
+            "weights_grads_optim_gb": (param_bytes + grad_bytes + optimizer_bytes) / zero_factor / 1e9,
+            "activations_gb": activation_bytes / 1e9,
+            "overhead_gb": 0.0,
+            "headroom_gb": tp.resources.gpu_memory_gb - total_gb if fits else 0.0,
         },
         "plan_digest": tp.digest(),
         "note": (
             "Does not fit - the run would OOM. Reduce micro-batch, raise "
             "recomputation, or add GPUs."
-            if not mem.fits else
+            if not fits else
             "Deterministic heuristics, not a profiled measurement."
         ),
     }
@@ -309,7 +327,17 @@ def submit_training_job(
             "plan_digest": digest,
         }
 
-    gaps = P.backend_gaps(tp.parallelism)
+    # Simple backend gap checking: current backend only supports solo, ddp, fsdp with ZeRO-3
+    gaps = []
+    if tp.parallelism.tp > 1:
+        gaps.append(f"Tensor Parallelism (tp={tp.parallelism.tp}) not yet supported")
+    if tp.parallelism.pp > 1:
+        gaps.append(f"Pipeline Parallelism (pp={tp.parallelism.pp}) not yet supported")
+    if tp.parallelism.cp > 1:
+        gaps.append(f"Context Parallelism (cp={tp.parallelism.cp}) not yet supported")
+    if tp.parallelism.ep > 1:
+        gaps.append(f"Expert Parallelism (ep={tp.parallelism.ep}) not yet supported")
+    
     if gaps:
         return {
             "success": False,

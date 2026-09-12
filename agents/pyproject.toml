@@ -49,6 +49,9 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["augur_agents"]
+include = [
+    "/augur_agents/py.typed",
+]
 
 [tool.ruff]
 target-version = "py310"
