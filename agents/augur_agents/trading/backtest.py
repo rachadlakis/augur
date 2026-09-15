@@ -144,8 +144,8 @@ class BaselineComparison:
         system_drawdown = system_metrics.get("max_drawdown", 0.0)
 
         return {
-            "system_return_pct": system_return,
-            "baseline_return_pct": baseline_return_pct,
+            "system_return_pct": system_return, ## pct is the percentage return of the system
+            "baseline_return_pct": baseline_return_pct, ## pct is the percentage return of the baseline
             "outperformance": round(system_return - baseline_return_pct, 2),
             "system_drawdown": system_drawdown,
             "baseline_drawdown": baseline_drawdown,
