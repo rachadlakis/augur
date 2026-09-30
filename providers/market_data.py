@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 from alpaca.data.enums import DataFeed
 from alpaca.data.historical import CryptoHistoricalDataClient, StockHistoricalDataClient
-from alpaca.data.requests import CryptoBarsRequest, StockBarsRequest
+from alpaca.data.requests import CryptoBarsRequest, CryptoLatestTradeRequest, StockBarsRequest, StockLatestTradeRequest
 from alpaca.data.timeframe import TimeFrame
 
 from config import Settings
@@ -56,6 +56,27 @@ class AlpacaMarketData:
         if not bars:
             raise DataUnavailable(f"no {timeframe} bars returned for {symbol}")
         return bars
+
+    def latest_prices(self, symbols: list[str]) -> dict[str, float]:
+        """Last trade price per symbol in two batched calls (stocks/ETFs, crypto).
+
+        Symbols with no recent trade are simply absent; nothing is filled in.
+        """
+        stocks = [s for s in symbols if "/" not in s]
+        crypto = [s for s in symbols if "/" in s]
+        prices: dict[str, float] = {}
+        try:
+            if stocks:
+                trades = self._stocks.get_stock_latest_trade(
+                    StockLatestTradeRequest(symbol_or_symbols=stocks, feed=DataFeed.IEX)
+                )
+                prices.update({s: float(t.price) for s, t in trades.items() if t is not None and t.price})
+            if crypto:
+                trades = self._crypto.get_crypto_latest_trade(CryptoLatestTradeRequest(symbol_or_symbols=crypto))
+                prices.update({s: float(t.price) for s, t in trades.items() if t is not None and t.price})
+        except Exception as e:
+            raise DataUnavailable(f"latest prices unavailable: {e}") from e
+        return prices
 
     def hourly_and_daily(self, symbol: str) -> tuple[list[dict], list[dict]]:
         return (

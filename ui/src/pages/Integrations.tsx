@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api, ApiError } from '../lib/api'
 import type { Integration, IntegrationsResponse } from '../lib/api'
 import { Badge, Card, Empty, Icon } from '../components/ui'
+import { Wallets } from '../components/Wallets'
 import type { ToastKind } from '../hooks/useToasts'
 
 type Filter = 'all' | 'broker' | 'data'
@@ -142,18 +143,19 @@ export function Integrations({ notify }: { notify: (kind: ToastKind, message: st
   const [filter, setFilter] = useState<Filter>('all')
   const [openId, setOpenId] = useState<string | null>(null)
 
-  const load = useCallback(async () => {
-    try {
-      const response = await api.integrations()
-      setData(response)
-      setError(null)
-      setOpenId((current) => current ?? response.integrations.find((i) => i.required && !i.configured)?.id ?? null)
-    } catch {
-      setError('Start the Augur server first: python src/dashboard_api.py')
-    }
+  useEffect(() => {
+    let active = true
+    api.integrations().then(
+      (response) => {
+        if (!active) return
+        setData(response)
+        // Open the first required-but-missing connection so the next step is obvious.
+        setOpenId((current) => current ?? response.integrations.find((i) => i.required && !i.configured)?.id ?? null)
+      },
+      () => { if (active) setError('Start the Augur server first: python src/dashboard_api.py') },
+    )
+    return () => { active = false }
   }, [])
-
-  useEffect(() => { load() }, [load])
 
   if (error) return <div className="page"><Card><Empty title="Can't reach Augur">{error}</Empty></Card></div>
   if (!data) return <div className="page"><div className="skeleton tall" /></div>
@@ -199,6 +201,8 @@ export function Integrations({ notify }: { notify: (kind: ToastKind, message: st
           />
         ))}
       </div>
+
+      <Wallets notify={notify} />
 
       <p className="muted small center">
         Keys are saved only on this computer, in the <code>.env</code> file. They are never shown again or sent anywhere else.

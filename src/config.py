@@ -50,9 +50,11 @@ class Settings(BaseSettings):
     coingecko_api_key: SecretStr = SecretStr("")
     fred_api_key: SecretStr = SecretStr("")
 
-    # Optional on-chain wallet
+    # Optional on-chain wallet. Augur never reads wallet_private_key: nothing in
+    # the code signs transactions. Wallets are watch-only by public address.
     wallet_private_key: SecretStr = SecretStr("")
     wallet_rpc_url: str = ""
+    watch_wallets: str = ""  # comma-separated public 0x addresses
 
     # Trading dashboard
     initial_capital: float = 100000.0

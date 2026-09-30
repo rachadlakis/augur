@@ -49,6 +49,8 @@ class OrderResult:
     avg_fill_price: float | None
     raw_error: str | None = None
     # None: no protection requested. "ATTACHED": exits are live at the venue.
+    # "STOP_ATTACHED": only the stop is at the venue (no OCO available); the
+    # position monitor must enforce the target.
     # "FLATTENED": attaching failed, so the fill was closed. "UNPROTECTED": both
     # failed and the position is open without exits; treat as an incident.
     protection_status: str | None = None

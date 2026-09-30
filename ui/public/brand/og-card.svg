@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="og-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1b2e"/>
+      <stop offset="1" stop-color="#0b0b0b"/>
+    </linearGradient>
+    <linearGradient id="og-mark" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3987e5"/>
+      <stop offset="1" stop-color="#184f95"/>
+    </linearGradient>
+    <linearGradient id="og-line" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#3987e5" stop-opacity="0"/>
+      <stop offset=".35" stop-color="#3987e5" stop-opacity=".9"/>
+      <stop offset="1" stop-color="#86b6ef"/>
+    </linearGradient>
+    <radialGradient id="og-glow" cx=".85" cy=".15" r=".6">
+      <stop offset="0" stop-color="#3987e5" stop-opacity=".35"/>
+      <stop offset="1" stop-color="#3987e5" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#og-bg)"/>
+  <rect width="1200" height="630" fill="url(#og-glow)"/>
+
+  <!-- hairline grid -->
+  <g stroke="#ffffff" stroke-opacity=".06" stroke-width="1">
+    <path d="M0 430H1200M0 500H1200M0 570H1200"/>
+  </g>
+  <!-- a calm, rising equity line with a drawdown: honest, not a rocket -->
+  <path d="M0 560 C120 548 180 520 260 530 S420 470 500 488 S640 440 700 452 S820 470 880 420 S1040 380 1200 330"
+        fill="none" stroke="url(#og-line)" stroke-width="5" stroke-linecap="round"/>
+
+  <g transform="translate(96 96)">
+    <rect width="112" height="112" rx="28" fill="url(#og-mark)"/>
+    <g transform="scale(1.75)">
+      <path d="M9 27c8-1 15 3 21 13 4-12 12-21 25-26" fill="none" stroke="#fff" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M12 48h40" stroke="#fff" stroke-opacity=".35" stroke-width="3" stroke-linecap="round"/>
+    </g>
+  </g>
+  <text x="236" y="176" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="72" font-weight="700" letter-spacing="-2" fill="#ffffff">Augur</text>
+
+  <text x="96" y="300" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="54" font-weight="650" letter-spacing="-1.5" fill="#ffffff">Trading agents with guardrails.</text>
+  <text x="96" y="360" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="28" fill="#c3c2b7">Crypto, gold and oil · live prices · practice money first · every trade has a stop.</text>
+</svg>

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api, ApiError } from '../lib/api'
-import type { ScanResponse, ScanRow } from '../lib/api'
+import { api, ApiError, REAL_MONEY_PHRASE } from '../lib/api'
+import type { Mode, ScanOrder, ScanResponse, ScanRow } from '../lib/api'
 import { ago, money, quantity, signedPct, tone } from '../lib/format'
 import { Badge, Card, Empty, Icon } from '../components/ui'
+import type { ToastKind } from '../hooks/useToasts'
 
 const GROUPS: { id: ScanRow['asset_class']; title: string; blurb: string }[] = [
   { id: 'crypto', title: 'Blockchain', blurb: 'Crypto trades around the clock and moves fast.' },
@@ -36,7 +37,72 @@ function Decision({ decision }: { decision: ScanRow['decision'] }) {
   return <Badge status="neutral">No trade</Badge>
 }
 
-function MarketCard({ row }: { row: ScanRow }) {
+function OrderDialog({ row, order, mode, onClose, notify }: {
+  row: ScanRow
+  order: ScanOrder
+  mode: Mode
+  onClose: () => void
+  notify: (kind: ToastKind, message: string) => void
+}) {
+  const [phrase, setPhrase] = useState('')
+  const [busy, setBusy] = useState(false)
+  const live = mode === 'live'
+  const ready = !live || phrase === REAL_MONEY_PHRASE
+
+  const send = async () => {
+    setBusy(true)
+    try {
+      const result = await api.placeOrder({
+        symbol: row.symbol, side: order.side, quantity: order.quantity,
+        stop_loss: order.stop_loss, take_profit: order.take_profit,
+        confirm_real_money: live ? phrase : undefined,
+      })
+      const protection = result.protection === 'ATTACHED' ? 'stop and target attached'
+        : result.protection === 'STOP_ATTACHED' ? 'stop attached, target watched by Augur' : String(result.protection)
+      notify('success', `${row.symbol}: ${result.quantity} sent (${protection})`)
+      if (result.warning) notify('info', result.warning)
+      onClose()
+    } catch (e) {
+      notify('error', e instanceof ApiError ? e.message : 'Could not reach the server')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="dialog-overlay" role="dialog" aria-modal="true" aria-label={`Order ${row.symbol}`}>
+      <div className={`dialog open ${live ? 'live' : ''}`}>
+        <h3>{live ? '⚠️ Real-money order' : 'Send to practice account'}</h3>
+        <div className="dialog-body">
+          <p>
+            {order.side === 'BUY' ? 'Buy' : 'Sell'} <strong>{row.name}</strong> ({row.symbol}) at the market price.
+            The server re-checks the size with the risk rules before sending.
+          </p>
+          <dl className="ticket">
+            <dt>Up to</dt><dd>{quantity(order.quantity)} (≈ {money(order.notional)})</dd>
+            <dt>Stop</dt><dd>{money(order.stop_loss)}</dd>
+            <dt>Target</dt><dd>{money(order.take_profit)}</dd>
+            <dt>Account</dt><dd>{live ? 'REAL money' : 'Practice money (paper)'}</dd>
+          </dl>
+          {live && (
+            <label className="field">
+              <span className="field-label">Type {REAL_MONEY_PHRASE} to confirm</span>
+              <input className="input" value={phrase} onChange={(e) => setPhrase(e.target.value)} autoFocus />
+            </label>
+          )}
+        </div>
+        <div className="dialog-actions">
+          <button className="btn ghost" onClick={onClose}>Cancel</button>
+          <button className={`btn ${live ? 'danger' : 'primary'}`} disabled={!ready || busy} onClick={send}>
+            {busy ? 'Sending…' : live ? 'Place real order' : 'Send practice order'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function MarketCard({ row, mode, onOrder }: { row: ScanRow; mode: Mode; onOrder: (row: ScanRow) => void }) {
   if (row.error || row.price === undefined) {
     return (
       <article className="market">
@@ -82,6 +148,11 @@ function MarketCard({ row }: { row: ScanRow }) {
             <span>Stop {money(row.order.stop_loss)}</span>
             <span>Target {money(row.order.take_profit)}</span>
           </div>
+          {mode !== 'demo' && (
+            <button className={`btn small ${mode === 'live' ? 'danger' : 'primary'}`} onClick={() => onOrder(row)}>
+              {mode === 'live' ? 'Place real order…' : 'Send to practice account…'}
+            </button>
+          )}
         </div>
       ) : (
         <ul className="why small">
@@ -92,8 +163,16 @@ function MarketCard({ row }: { row: ScanRow }) {
   )
 }
 
-export function Markets({ onConnect }: { onConnect: () => void }) {
+const toError = (e: unknown) =>
+  e instanceof ApiError ? { status: e.status, message: e.message } : { status: 0, message: 'Could not reach the Augur server' }
+
+export function Markets({ onConnect, mode, notify }: {
+  onConnect: () => void
+  mode: Mode
+  notify: (kind: ToastKind, message: string) => void
+}) {
   const [data, setData] = useState<ScanResponse | null>(null)
+  const [ordering, setOrdering] = useState<ScanRow | null>(null)
   const [error, setError] = useState<{ status: number; message: string } | null>(null)
   const [loading, setLoading] = useState(false)
 
@@ -103,13 +182,20 @@ export function Markets({ onConnect }: { onConnect: () => void }) {
       setData(await api.scan(refresh))
       setError(null)
     } catch (e) {
-      setError(e instanceof ApiError ? { status: e.status, message: e.message } : { status: 0, message: 'Could not reach the Augur server' })
+      setError(toError(e))
     } finally {
       setLoading(false)
     }
   }, [])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    let active = true
+    api.scan().then(
+      (result) => { if (active) setData(result) },
+      (e) => { if (active) setError(toError(e)) },
+    )
+    return () => { active = false }
+  }, [])
 
   if (error && !data) {
     return (
@@ -148,10 +234,16 @@ export function Markets({ onConnect }: { onConnect: () => void }) {
               <h2>{group.title}</h2>
               <p className="muted small">{group.blurb}</p>
             </header>
-            <div className="markets">{rows.map((row) => <MarketCard key={row.symbol} row={row} />)}</div>
+            <div className="markets">
+              {rows.map((row) => <MarketCard key={row.symbol} row={row} mode={mode} onOrder={setOrdering} />)}
+            </div>
           </section>
         )
       })}
+
+      {ordering?.order && (
+        <OrderDialog row={ordering} order={ordering.order} mode={mode} notify={notify} onClose={() => setOrdering(null)} />
+      )}
     </div>
   )
 }

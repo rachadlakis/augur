@@ -70,12 +70,16 @@ export function useDashboard() {
 
   // REST fallback while the socket is down, plus a steady health poll either way.
   useEffect(() => {
-    refresh()
-    const interval = setInterval(() => {
+    const poll = () => {
       if (connection !== 'live') refresh()
       else api.health().then(setHealth).catch(() => undefined)
-    }, connection === 'live' ? 5000 : 3000)
-    return () => clearInterval(interval)
+    }
+    const first = setTimeout(poll, 0)
+    const interval = setInterval(poll, connection === 'live' ? 5000 : 3000)
+    return () => {
+      clearTimeout(first)
+      clearInterval(interval)
+    }
   }, [connection, refresh])
 
   return { portfolio, health, alerts, connection, refresh, pushAlert }

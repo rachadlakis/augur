@@ -24,6 +24,10 @@ cd ..
 echo.
 echo ✅ Dependencies installed!
 echo.
+echo 🔌 Connect your practice accounts (or use the Integrations page later):
+echo   python scripts\setup_integrations.py
+echo   Guide: docs\INTEGRATIONS_FOR_ZIKO.md
+echo.
 
 REM Step 2: Instructions
 echo 🚀 Step 2: Start the services

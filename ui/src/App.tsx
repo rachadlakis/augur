@@ -70,7 +70,9 @@ export default function App() {
 
   const content = () => {
     if (page === 'integrations') return <Integrations notify={notify} />
-    if (page === 'markets') return <Markets onConnect={() => go('integrations')} />
+    if (page === 'markets') {
+      return <Markets onConnect={() => go('integrations')} mode={health?.mode ?? portfolio?.mode ?? 'demo'} notify={notify} />
+    }
     if (!portfolio) {
       return (
         <div className="page">
@@ -103,7 +105,7 @@ export default function App() {
     <div className="shell">
       <nav className="sidebar" aria-label="Main">
         <div className="brand">
-          <span className="brand-mark" aria-hidden="true">◆</span>
+          <img className="brand-mark" src="/favicon.svg" alt="" width={30} height={30} />
           <span className="brand-name">Augur</span>
         </div>
         <ul>
@@ -132,9 +134,12 @@ export default function App() {
           <h1>{NAV.find((n) => n.id === page)?.label}</h1>
           <div className="topbar-right">
             {halted && <Badge status="critical">Trading halted</Badge>}
-            {portfolio && (portfolio.mode === 'demo'
-              ? <Badge status="neutral">Demo data</Badge>
-              : <Badge status="warning">Broker connected</Badge>)}
+            {portfolio && portfolio.mode === 'demo' && <Badge status="neutral">Demo data</Badge>}
+            {portfolio && portfolio.mode === 'paper' && <Badge status="good">Practice money</Badge>}
+            {portfolio && portfolio.mode === 'live' && <Badge status="critical">REAL MONEY</Badge>}
+            {portfolio && (portfolio.price_source === 'alpaca'
+              ? <Badge status="good">Live prices</Badge>
+              : <Badge status="neutral">Simulated prices</Badge>)}
             <Badge status={conn.status}>{conn.label}</Badge>
             <button
               className="icon-btn"

@@ -24,7 +24,9 @@ from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 import asyncio
 import json
+import math
 import random
+from urllib.parse import urlparse
 from collections import deque
 from datetime import datetime
 import logging
@@ -36,7 +38,7 @@ from augur_agents.trading.journal import TradeJournal
 from augur_agents.trading.monitor import PositionMonitor
 from config import Settings, load_settings
 from augur_agents.trading.markets import UNIVERSE, snapshot_from_bars
-from providers import fred
+from providers import fred, wallets
 from providers.base import DataUnavailable, OrderSide
 from providers.market_data import AlpacaMarketData
 from providers.stocks_alpaca import AlpacaProvider
@@ -98,6 +100,8 @@ class PortfolioDashboard(BaseModel):
     realized_pnl: float = 0.0
     unrealized_pnl: float = 0.0
     mode: str = "demo"
+    price_source: str = "simulated"
+    last_price_at: Optional[str] = None
     halted: bool = False
     equity_curve: List[EquityPoint] = []
 
@@ -200,9 +204,21 @@ class TradingState:
             except Exception as e:
                 logger.warning(f"Could not initialize Alpaca: {e}. Using demo mode.")
 
-        # True until real broker positions are loaded; gates price simulation
-        # and whether closes are sent to the broker.
+        # True until the broker book is loaded; gates whether closes and orders
+        # go to the broker.
         self.demo_mode = True
+
+        # Real-time prices whenever Alpaca keys exist; simulation only without them.
+        self.market_data: Optional[AlpacaMarketData] = None
+        if self.alpaca is not None:
+            try:
+                self.market_data = AlpacaMarketData(self.settings)
+            except Exception as e:
+                logger.warning(f"Market data unavailable: {e}")
+        self.latest_prices: Dict[str, float] = {}
+        self.last_price_at: Optional[str] = None
+        # Exit plans for orders we placed: symbol -> {stop_price, target_price, local_stop, local_target}
+        self.order_plans: Dict[str, Dict[str, Any]] = {}
 
         # State tracking
         self.initial_equity = self.settings.initial_capital
@@ -222,6 +238,17 @@ class TradingState:
     def halted(self) -> bool:
         return self.pipeline.guard.halted
 
+    @property
+    def mode(self) -> str:
+        """demo: no broker, simulated book. paper: broker with fake money. live: real money."""
+        if self.demo_mode:
+            return "demo"
+        return "paper" if self.settings.alpaca_paper else "live"
+
+    @property
+    def price_source(self) -> str:
+        return "alpaca" if self.market_data is not None else "simulated"
+
     async def add_position(
         self,
         symbol: str,
@@ -233,22 +260,40 @@ class TradingState:
     ):
         """Add new position"""
         async with self.lock:
-            self.positions[symbol] = {
-                'symbol': symbol,
-                'quantity': quantity,
-                'entry_price': entry_price,
-                'current_price': entry_price,
-                'side': side,
-                'pnl': 0.0,
-                'pnl_pct': 0.0,
-                'thesis_valid': True,
-                'thesis': thesis,
-                'stop_price': None,
-                'target_price': None,
-                'entry_time': datetime.now().isoformat(),
-            }
-            self._mark(symbol, current_price if current_price is not None else entry_price)
-            logger.info(f"Added position: {symbol} {quantity} @ {entry_price}")
+            self._add_position_locked(symbol, quantity, entry_price, side, thesis, current_price)
+
+    def _add_position_locked(
+        self,
+        symbol: str,
+        quantity: float,
+        entry_price: float,
+        side: str,
+        thesis: str = "",
+        current_price: Optional[float] = None,
+        *,
+        exits_at_broker: bool = False,
+    ):
+        """Caller must hold the lock. Broker-held positions keep their exits at the
+        broker (brackets); the dashboard enforces only exits recorded as local."""
+        plan = self.order_plans.get(symbol, {})
+        self.positions[symbol] = {
+            'symbol': symbol,
+            'quantity': quantity,
+            'entry_price': entry_price,
+            'current_price': entry_price,
+            'side': side,
+            'pnl': 0.0,
+            'pnl_pct': 0.0,
+            'thesis_valid': True,
+            'thesis': thesis,
+            'stop_price': plan.get('stop_price'),
+            'target_price': plan.get('target_price'),
+            'local_stop': plan.get('local_stop', not exits_at_broker),
+            'local_target': plan.get('local_target', not exits_at_broker),
+            'entry_time': datetime.now().isoformat(),
+        }
+        self._mark(symbol, current_price if current_price is not None else entry_price)
+        logger.info(f"Added position: {symbol} {quantity} @ {entry_price}")
 
     def _mark(self, symbol: str, current_price: float):
         """Apply a new price to a position. Caller must hold the lock."""
@@ -468,42 +513,38 @@ class TradingState:
     
     
     async def load_alpaca_positions(self) -> bool:
-        """Load real positions from Alpaca with their real entry and mark prices."""
+        """Adopt the Alpaca book as the source of truth, even when it is empty.
+
+        Returns False (staying in demo) only when the broker can't be read or a
+        position lacks real entry/mark prices; placeholders are never used.
+        """
         if not self.alpaca:
             logger.info("Alpaca not available, using demo mode")
             return False
 
         try:
-            account = self.alpaca.get_account()
-            broker_positions = self.alpaca.get_positions()
+            account = await asyncio.to_thread(self.alpaca.get_account)
+            broker_positions = await asyncio.to_thread(self.alpaca.get_positions)
         except Exception as e:
             logger.error(f"Failed to load Alpaca positions: {e}")
             return False
 
-        logger.info(f"Loaded Alpaca account: equity=${account.equity:.2f}, cash=${account.cash:.2f}")
-        if not broker_positions:
-            logger.info("No positions in Alpaca account, using demo mode")
-            return False
-
         missing = [p.symbol for p in broker_positions if not p.avg_entry_price or not p.current_price]
         if missing:
-            # Never substitute a placeholder price: P&L and risk would be fiction.
             logger.error(f"Alpaca positions without entry/mark prices: {missing}; staying in demo mode")
             return False
 
-        logger.info(f"Loading {len(broker_positions)} positions from Alpaca")
+        logger.info(f"Loaded Alpaca account: equity=${account.equity:.2f}, {len(broker_positions)} position(s)")
         async with self.lock:
             self.positions.clear()
             self.realized_pnl = 0.0
-        for p in broker_positions:
-            assert p.avg_entry_price is not None  # filtered above
-            side = "BUY" if p.side == OrderSide.BUY else "SELL"
-            await self.add_position(
-                p.symbol, p.quantity, p.avg_entry_price, side, "Imported from Alpaca",
-                current_price=p.current_price,
-            )
-
-        async with self.lock:
+            for p in broker_positions:
+                assert p.avg_entry_price is not None  # filtered above
+                side = "BUY" if p.side == OrderSide.BUY else "SELL"
+                self._add_position_locked(
+                    p.symbol, p.quantity, p.avg_entry_price, side, "Held at Alpaca",
+                    current_price=p.current_price, exits_at_broker=True,
+                )
             # Broker equity already includes open P&L; back it out of the baseline
             # so equity = baseline + realized + unrealized reproduces it exactly.
             self.initial_equity = account.equity - self.unrealized_pnl()
@@ -512,6 +553,41 @@ class TradingState:
             self._calculate_account_equity()
             self.demo_mode = False
         return True
+
+    async def sync_broker(self) -> List[str]:
+        """Reconcile with the broker. Positions the broker closed (bracket stop or
+        target filled) are recorded as trades at the broker's own fill price."""
+        if self.demo_mode or self.alpaca is None:
+            return []
+        broker = {p.symbol: p for p in await asyncio.to_thread(self.alpaca.get_positions)}
+        vanished = [s for s in self.positions if s not in broker]
+        exit_fills = {}
+        for symbol in vanished:
+            try:
+                exit_fills[symbol] = await asyncio.to_thread(self.alpaca.last_fill_price, symbol)
+            except Exception as e:
+                logger.warning(f"No exit fill found for {symbol}: {e}")
+
+        async with self.lock:
+            for symbol in vanished:
+                if symbol in self.positions:
+                    price = exit_fills.get(symbol) or self.positions[symbol]['current_price']
+                    self._close_position_locked(symbol, price, "closed_at_broker", send_to_broker=False)
+                    self.order_plans.pop(symbol, None)
+            for symbol, p in broker.items():
+                if not p.avg_entry_price or not p.current_price:
+                    continue
+                side = "BUY" if p.side == OrderSide.BUY else "SELL"
+                if symbol in self.positions:
+                    pos = self.positions[symbol]
+                    pos['quantity'], pos['entry_price'], pos['side'] = p.quantity, p.avg_entry_price, side
+                    self._mark(symbol, p.current_price)
+                else:
+                    self._add_position_locked(
+                        symbol, p.quantity, p.avg_entry_price, side, "Held at Alpaca",
+                        current_price=p.current_price, exits_at_broker=True,
+                    )
+        return vanished
 
 # Initialize trading state
 trading_state = TradingState()
@@ -874,6 +950,145 @@ async def scan_markets(refresh: bool = False):
     return result
 
 
+REAL_MONEY_PHRASE = "REAL MONEY"
+
+
+class OrderTicket(BaseModel):
+    symbol: str
+    side: str  # "BUY" | "SELL"
+    quantity: float
+    stop_loss: float
+    take_profit: float
+    confirm_real_money: Optional[str] = None
+
+
+@app.post("/api/orders")
+async def submit_order(ticket: OrderTicket):
+    """Send a bracketed order to the connected broker, after the server re-checks everything.
+
+    The browser's numbers are never trusted: the price comes from the live feed,
+    size is re-derived by the risk engine and capped by exposure limits, and the
+    kill switch and rate limits apply. Live accounts also need the typed phrase.
+    """
+    from augur_agents.trading.markets import BY_SYMBOL
+    from augur_agents.trading.risk import RiskManager
+    from providers.base import OrderRequest, OrderType
+
+    instrument = BY_SYMBOL.get(ticket.symbol)
+    if instrument is None:
+        raise HTTPException(status_code=400, detail=f"{ticket.symbol} is not in the tradable universe")
+    side = ticket.side.upper()
+    if side not in {"BUY", "SELL"}:
+        raise HTTPException(status_code=400, detail="side must be BUY or SELL")
+    if trading_state.demo_mode or trading_state.alpaca is None or trading_state.market_data is None:
+        raise HTTPException(status_code=409, detail="Connect Alpaca on the Integrations page to place orders")
+    if trading_state.mode == "live" and ticket.confirm_real_money != REAL_MONEY_PHRASE:
+        raise HTTPException(status_code=403, detail=f'This is a real-money account. Type "{REAL_MONEY_PHRASE}" to confirm.')
+    if instrument.asset_class == "crypto" and side == "SELL":
+        raise HTTPException(status_code=400, detail="Crypto can't be sold short at Alpaca; only buys open crypto positions")
+
+    blocked = trading_state.pipeline.guard.check()
+    if blocked:
+        raise HTTPException(status_code=409, detail="; ".join(blocked))
+
+    try:
+        prices = await asyncio.to_thread(trading_state.market_data.latest_prices, [ticket.symbol])
+    except DataUnavailable as e:
+        raise HTTPException(status_code=503, detail=f"No live price: {e}")
+    price = prices.get(ticket.symbol)
+    if not price:
+        raise HTTPException(status_code=503, detail=f"No live price for {ticket.symbol}")
+
+    equity = max(trading_state.account_equity, 1.0)
+    position = trading_state.positions.get(ticket.symbol)
+    risk = trading_state.pipeline.risk.evaluate(
+        decision=side, market_snapshot=None, entry=price, stop=ticket.stop_loss, target=ticket.take_profit,
+        account_equity=equity,
+        exposure=(position['quantity'] * position['current_price'] / equity) if position else 0.0,
+        portfolio_exposure=abs(trading_state.net_position_value()) / equity,
+        daily_loss_used=_today_loss_fraction(), spread=0.0005, liquidity=0.9,
+    )
+    if not risk["allowed"]:
+        raise HTTPException(status_code=400, detail="Risk check refused: " + "; ".join(risk["reasons"]))
+
+    quantity = min(ticket.quantity, risk["position_qty"])
+    if instrument.asset_class != "crypto":
+        quantity = float(math.floor(quantity))  # Alpaca brackets need whole shares
+    else:
+        quantity = math.floor(quantity * 1e6) / 1e6
+    if quantity <= 0:
+        raise HTTPException(status_code=400, detail="Position too small: under one whole share at this risk budget")
+
+    result = await asyncio.to_thread(trading_state.alpaca.place_order, OrderRequest(
+        symbol=ticket.symbol, side=OrderSide(side), order_type=OrderType.MARKET, quantity=quantity,
+        stop_loss=ticket.stop_loss, take_profit=ticket.take_profit,
+    ))
+    if result.status == "REJECTED":
+        raise HTTPException(status_code=502, detail=f"Broker rejected the order: {result.raw_error}")
+
+    trading_state.pipeline.guard.record_entry()
+    # Exits live at the broker, except a crypto target (no OCO there): the monitor enforces that.
+    trading_state.order_plans[ticket.symbol] = {
+        'stop_price': ticket.stop_loss, 'target_price': ticket.take_profit,
+        'local_stop': False, 'local_target': result.protection_status == "STOP_ATTACHED",
+    }
+    try:
+        await trading_state.sync_broker()
+    except Exception as e:
+        logger.warning(f"Post-order sync failed: {e}")
+    return {
+        "order_id": result.order_id, "status": result.status, "quantity": quantity,
+        "protection": result.protection_status, "mode": trading_state.mode,
+        "warning": result.raw_error,
+    }
+
+
+class WalletRequest(BaseModel):
+    address: str
+
+
+def _watched_wallets() -> List[str]:
+    return [a.strip() for a in trading_state.settings.watch_wallets.split(",") if a.strip()]
+
+
+def _save_watched_wallets(addresses: List[str]) -> None:
+    integrations.write_env({"WATCH_WALLETS": ",".join(addresses)})
+    trading_state.settings = load_settings()
+
+
+@app.get("/api/wallets")
+async def list_wallets():
+    """Watch-only balances. Augur never holds or uses a private key."""
+    rpc = trading_state.settings.wallet_rpc_url or wallets.DEFAULT_RPC_URL
+    eth_price = trading_state.latest_prices.get("ETH/USD")
+    rows = []
+    for address in _watched_wallets():
+        try:
+            balance = await asyncio.to_thread(wallets.eth_balance, address, rpc)
+            rows.append({"address": address, "eth": balance, "usd": balance * eth_price if eth_price else None})
+        except DataUnavailable as e:
+            rows.append({"address": address, "error": str(e)})
+    return {"wallets": rows, "rpc_host": urlparse(rpc).hostname, "eth_price": eth_price}
+
+
+@app.post("/api/wallets")
+async def add_wallet(req: WalletRequest):
+    try:
+        address = wallets.validate_address(req.address)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    current = _watched_wallets()
+    if address.lower() not in {a.lower() for a in current}:
+        _save_watched_wallets(current + [address])
+    return {"watching": _watched_wallets()}
+
+
+@app.delete("/api/wallets/{address}")
+async def remove_wallet(address: str):
+    _save_watched_wallets([a for a in _watched_wallets() if a.lower() != address.lower()])
+    return {"watching": _watched_wallets()}
+
+
 class KillSwitchRequest(BaseModel):
     reason: str = "manual kill switch"
 
@@ -905,7 +1120,9 @@ async def health_check():
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
         "pipeline": "ready",
-        "mode": "demo" if trading_state.demo_mode else "live",
+        "mode": trading_state.mode,
+        "price_source": trading_state.price_source,
+        "last_price_at": trading_state.last_price_at,
         "halted": trading_state.halted,
         "halt_reason": trading_state.pipeline.guard.halt_reason,
     }
@@ -960,6 +1177,8 @@ async def update_stop(symbol: str, stop_price: Any) -> Dict[str, Any]:
                 detail=f"Stop for a {'long' if is_long else 'short'} must be {side} the current price {pos['current_price']:.2f}",
             )
         pos['stop_price'] = float(stop_price)
+        # A stop set here is enforced by this dashboard (closing at the broker when live).
+        pos['local_stop'] = True
         logger.info(f"Updated {symbol} stop to ${stop_price}")
         return {"status": "success", "message": f"Stop updated to ${stop_price}"}
 
@@ -1025,7 +1244,9 @@ async def get_portfolio_snapshot() -> PortfolioDashboard:
             timestamp=datetime.now().isoformat(),
             realized_pnl=trading_state.realized_pnl,
             unrealized_pnl=trading_state.unrealized_pnl(),
-            mode="demo" if trading_state.demo_mode else "live",
+            mode=trading_state.mode,
+            price_source=trading_state.price_source,
+            last_price_at=trading_state.last_price_at,
             halted=trading_state.halted,
             equity_curve=[EquityPoint(t=t, equity=e) for t, e in trading_state.equity_points],
         )
@@ -1148,13 +1369,15 @@ def find_exits(positions: Dict[str, Dict[str, Any]]) -> List[tuple]:
         is_long = pos['side'] == 'BUY'
         price = pos['current_price']
 
-        # Stop sits below entry for longs, above for shorts
-        stop = pos.get('stop_price')
+        # Stop sits below entry for longs, above for shorts. Exits the broker
+        # holds (bracket legs) are the broker's job; enforcing them here too
+        # would double-close.
+        stop = pos.get('stop_price') if pos.get('local_stop', True) else None
         if stop and ((is_long and price <= stop) or (not is_long and price >= stop)):
             exits.append((symbol, price, "hit_stop"))
             continue
 
-        target = pos.get('target_price')
+        target = pos.get('target_price') if pos.get('local_target', True) else None
         if target and ((is_long and price >= target) or (not is_long and price <= target)):
             exits.append((symbol, price, "hit_target"))
             continue
@@ -1214,16 +1437,54 @@ async def broadcast_portfolio_updates():
             await asyncio.sleep(0.5)
 
 
-async def simulate_market_data():
-    """Background task to simulate price updates for demo positions only.
+PRICE_POLL_SECONDS = 5
+BROKER_SYNC_SECONDS = 15
 
-    Once real broker positions are loaded this does nothing: simulated prices
-    must never touch a live book.
+
+async def live_price_feed():
+    """Mark every open position (and the market universe) to real prices every few seconds."""
+    while True:
+        await asyncio.sleep(PRICE_POLL_SECONDS)
+        if trading_state.market_data is None:
+            continue
+        try:
+            symbols = sorted(set(trading_state.positions) | {i.symbol for i in UNIVERSE})
+            prices = await asyncio.to_thread(trading_state.market_data.latest_prices, symbols)
+            async with trading_state.lock:
+                for symbol, price in prices.items():
+                    if symbol in trading_state.positions:
+                        trading_state._mark(symbol, price)
+                trading_state.latest_prices.update(prices)
+                trading_state.last_price_at = datetime.now().isoformat()
+        except Exception as e:
+            logger.warning(f"Live price update failed: {e}")
+
+
+async def broker_sync_loop():
+    """Pick up fills and bracket exits that happened at the broker."""
+    while True:
+        await asyncio.sleep(BROKER_SYNC_SECONDS)
+        try:
+            closed = await trading_state.sync_broker()
+            for symbol in closed:
+                await manager.broadcast_alert(Alert(
+                    alert_type="POSITION_ALERT", symbol=symbol,
+                    message=f"{symbol} was closed at the broker (stop or target filled)",
+                    severity="INFO", timestamp=datetime.now().isoformat(),
+                ))
+        except Exception as e:
+            logger.warning(f"Broker sync failed: {e}")
+
+
+async def simulate_market_data():
+    """Simulated price moves, used only when no real price feed is configured.
+
+    Simulated prices must never touch a live book or override real quotes.
     """
     while True:
         try:
             await asyncio.sleep(2)  # Update prices every 2 seconds
-            if not trading_state.demo_mode:
+            if not trading_state.demo_mode or trading_state.market_data is not None:
                 continue
 
             async with trading_state.lock:
@@ -1246,14 +1507,17 @@ async def startup_event():
     asyncio.create_task(monitor_positions())
     asyncio.create_task(broadcast_portfolio_updates())
     asyncio.create_task(simulate_market_data())
+    asyncio.create_task(live_price_feed())
+    asyncio.create_task(broker_sync_loop())
     
     logger.info("Background tasks started")
     
-    # Try to load real Alpaca positions first
+    # The broker book (even an empty one) beats demo data whenever Alpaca is connected.
     alpaca_loaded = await trading_state.load_alpaca_positions()
-    
-    # If no Alpaca positions, add demo positions
-    if not alpaca_loaded:
+
+    # Only with no broker and no real prices at all: a small simulated demo book.
+    # (Hardcoded demo entries marked to real quotes would show fictional P&L.)
+    if not alpaca_loaded and trading_state.market_data is None:
         logger.info("Using demo positions")
         await trading_state.add_position("AAPL", 100, 150.00, "BUY", "Strong technical breakout")
         await trading_state.add_position("TSLA", 50, 200.00, "BUY", "Positive earnings surprise")

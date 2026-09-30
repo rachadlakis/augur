@@ -52,9 +52,9 @@ export function Overview({ portfolio, alerts, onNavigate }: {
           </div>
         </div>
         <div className="hero-badges">
-          {portfolio.mode === 'demo'
-            ? <Badge status="good">Practice mode: no real money</Badge>
-            : <Badge status="warning">Live broker account</Badge>}
+          {portfolio.mode === 'demo' && <Badge status="good">Demo: simulated book</Badge>}
+          {portfolio.mode === 'paper' && <Badge status="good">Practice money at Alpaca</Badge>}
+          {portfolio.mode === 'live' && <Badge status="critical">REAL MONEY account</Badge>}
           {portfolio.halted
             ? <Badge status="critical">Trading halted</Badge>
             : <Badge status="neutral">Safety rules on</Badge>}

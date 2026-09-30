@@ -50,7 +50,9 @@ export interface Portfolio {
   timestamp: string
   realized_pnl: number
   unrealized_pnl: number
-  mode: 'demo' | 'live'
+  mode: Mode
+  price_source: 'alpaca' | 'simulated'
+  last_price_at: string | null
   halted: boolean
   equity_curve: EquityPoint[]
 }
@@ -72,9 +74,13 @@ export interface CommandResponse {
   requires_confirmation: boolean
 }
 
+export type Mode = 'demo' | 'paper' | 'live'
+
 export interface Health {
   status: string
-  mode: 'demo' | 'live'
+  mode: Mode
+  price_source: 'alpaca' | 'simulated'
+  last_price_at: string | null
   halted: boolean
   halt_reason: string | null
 }
@@ -136,6 +142,39 @@ export interface ScanResponse {
   instruments: ScanRow[]
 }
 
+export interface OrderTicket {
+  symbol: string
+  side: Side
+  quantity: number
+  stop_loss: number
+  take_profit: number
+  confirm_real_money?: string
+}
+
+export interface OrderResponse {
+  order_id: string
+  status: string
+  quantity: number
+  protection: string | null
+  mode: Mode
+  warning: string | null
+}
+
+export interface WalletRow {
+  address: string
+  eth?: number
+  usd?: number | null
+  error?: string
+}
+
+export interface WalletsResponse {
+  wallets: WalletRow[]
+  rpc_host: string | null
+  eth_price: number | null
+}
+
+export const REAL_MONEY_PHRASE = 'REAL MONEY'
+
 export class ApiError extends Error {
   readonly status: number
   constructor(status: number, message: string) {
@@ -174,6 +213,11 @@ export const api = {
   killSwitch: (reason: string) => post<{ closed: number }>('/api/kill-switch', { reason }),
   resume: () => post<{ halted: boolean }>('/api/resume'),
   scan: (refresh = false) => request<ScanResponse>(`/api/markets/scan${refresh ? '?refresh=true' : ''}`),
+  placeOrder: (ticket: OrderTicket) => post<OrderResponse>('/api/orders', ticket),
+  wallets: () => request<WalletsResponse>('/api/wallets'),
+  addWallet: (address: string) => post<{ watching: string[] }>('/api/wallets', { address }),
+  removeWallet: (address: string) =>
+    request<{ watching: string[] }>(`/api/wallets/${encodeURIComponent(address)}`, { method: 'DELETE' }),
   integrations: () => request<IntegrationsResponse>('/api/integrations'),
   saveKeys: (id: string, values: Record<string, string>) =>
     post<{ saved: string[]; integration: Integration }>(`/api/integrations/${id}/keys`, { values }),

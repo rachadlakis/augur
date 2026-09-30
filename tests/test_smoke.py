@@ -107,3 +107,31 @@ def test_demo_script_runs_end_to_end():
     )
     assert result.returncode == 0, result.stderr[-2000:]
     assert "ALL PHASES COMPLETE" in result.stdout
+
+
+def test_setup_wizard_status_runs_and_hides_keys():
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "setup_integrations.py"), "--status"],
+        capture_output=True, text=True, encoding="utf-8", env=env, timeout=60,
+    )
+    assert result.returncode == 0, result.stderr[-2000:]
+    assert "Connections:" in result.stdout
+    assert "Practice mode stays ON" in result.stdout
+    from config import Settings
+
+    settings = Settings()
+    for field in ("alpaca_api_key", "alpaca_secret_key", "binance_api_key", "binance_api_secret"):
+        secret = getattr(settings, field).get_secret_value()
+        if secret:
+            assert secret not in result.stdout
+
+
+def test_write_env_merges_without_touching_other_lines(tmp_path):
+    sys.path.insert(0, str(ROOT / "src"))
+    import integrations
+
+    env_file = tmp_path / ".env"
+    env_file.write_text("# comment\nALPACA_PAPER=true\nNEWSAPI_KEY=old\n", encoding="utf-8")
+    integrations.write_env({"NEWSAPI_KEY": "new", "FRED_API_KEY": "abc"}, env_file)
+    assert env_file.read_text(encoding="utf-8") == "# comment\nALPACA_PAPER=true\nNEWSAPI_KEY=new\nFRED_API_KEY=abc\n"

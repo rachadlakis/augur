@@ -121,10 +121,7 @@ a { color: var(--accent); }
 }
 .sidebar ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 2px; }
 .brand { display: flex; align-items: center; gap: 10px; padding: 4px 10px 12px; }
-.brand-mark {
-  display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px;
-  background: var(--accent); color: var(--accent-ink); font-size: 15px;
-}
+.brand-mark { display: block; width: 30px; height: 30px; border-radius: 8px; }
 .brand-name { font-weight: 700; font-size: 18px; letter-spacing: -0.02em; }
 
 .nav-item {
@@ -442,6 +439,25 @@ main { padding: 28px 32px 48px; }
 .suggestion { display: grid; gap: 6px; padding: 10px 12px; border-radius: 10px; background: var(--accent-wash); }
 .suggestion-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; font-variant-numeric: tabular-nums; }
 .why { margin: 0; padding-left: 18px; color: var(--muted); display: grid; gap: 2px; }
+
+/* ---------------------------------------------------------------- order dialog & wallets */
+
+.dialog-overlay {
+  position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; padding: 16px;
+  background: rgba(0, 0, 0, 0.5); backdrop-filter: blur(2px); animation: rise 0.15s ease-out;
+}
+.dialog.open { display: block; position: static; margin: 0; }
+.dialog.live { border: 2px solid var(--critical); }
+.ticket { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; margin: 14px 0; font-variant-numeric: tabular-nums; }
+.ticket dt { color: var(--muted); }
+.ticket dd { margin: 0; font-weight: 600; color: var(--ink); }
+.suggestion .btn { justify-self: start; margin-top: 4px; }
+.wallet-form { margin: 14px 0; flex-wrap: nowrap; }
+.wallet-form .input { flex: 1; min-width: 0; }
+.wallets { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.wallets li { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--grid); }
+.wallets li:last-child { border-bottom: 0; }
+.wallets li > span:nth-child(2) { text-align: right; }
 
 /* ---------------------------------------------------------------- loading */
 

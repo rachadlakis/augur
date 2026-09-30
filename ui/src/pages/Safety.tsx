@@ -84,7 +84,8 @@ export function Safety({ health, portfolio, notify, onChanged }: {
         </ul>
         <p className="muted small">
           These live in the code, not in a prompt, so no AI answer can switch them off.
-          Mode: {portfolio.mode === 'demo' ? 'practice (simulated prices)' : 'broker account'}.
+          Mode: {portfolio.mode === 'demo' ? 'demo (simulated book)' : portfolio.mode === 'paper' ? 'practice money at the broker' : 'REAL money'}.
+          Prices: {portfolio.price_source === 'alpaca' ? 'live from Alpaca' : 'simulated'}.
         </p>
       </Card>
 
