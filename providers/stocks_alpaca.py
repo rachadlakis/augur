@@ -3,28 +3,54 @@ Alpaca implementation of ExecutionProvider.
 Requires: pip install alpaca-py
 """
 
+from typing import Any
+
 from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import (
     MarketOrderRequest, LimitOrderRequest, StopOrderRequest,
-    StopLossRequest, TakeProfitRequest,
+    StopLossRequest, TakeProfitRequest, GetOrdersRequest,
 )
-from alpaca.trading.enums import OrderClass, OrderSide as AlpacaSide, TimeInForce
+from alpaca.trading.enums import OrderClass, OrderSide as AlpacaSide, QueryOrderStatus, TimeInForce
+from alpaca.data.historical import StockHistoricalDataClient
+from alpaca.data.requests import StockLatestTradeRequest
 from alpaca.common.exceptions import APIError
 
 from config import Settings
 from providers.base import (
-    ExecutionProvider, OrderRequest, OrderResult, OrderType,
-    AccountSnapshot, DataUnavailable,
+    ExecutionProvider, OrderRequest, OrderResult, OrderSide, OrderType,
+    AccountSnapshot, DataUnavailable, PositionSnapshot,
 )
+
+
+def _field(obj: Any, name: str) -> Any:
+    """Read a field from either an SDK model or its raw-dict form."""
+    return obj.get(name) if isinstance(obj, dict) else getattr(obj, name, None)
+
+
+def _float(value: Any) -> float | None:
+    return float(value) if value not in (None, "") else None
+
+
+def _order_result(resp: Any, *, protection_status: str | None = None) -> OrderResult:
+    return OrderResult(
+        order_id=str(_field(resp, "id") or ""),
+        status=str(_field(resp, "status") or ""),
+        filled_qty=_float(_field(resp, "filled_qty")) or 0.0,
+        avg_fill_price=_float(_field(resp, "filled_avg_price")),
+        protection_status=protection_status,
+    )
+
+
+def _rejected(error: Exception | str) -> OrderResult:
+    return OrderResult(order_id="", status="REJECTED", filled_qty=0.0, avg_fill_price=None, raw_error=str(error))
 
 
 class AlpacaProvider(ExecutionProvider):
     def __init__(self, settings: Settings):
-        self._client = TradingClient(
-            api_key=settings.alpaca_api_key.get_secret_value(),
-            secret_key=settings.alpaca_secret_key.get_secret_value(),
-            paper=settings.alpaca_paper,
-        )
+        api_key = settings.alpaca_api_key.get_secret_value()
+        secret_key = settings.alpaca_secret_key.get_secret_value()
+        self._client = TradingClient(api_key=api_key, secret_key=secret_key, paper=settings.alpaca_paper)
+        self._data = StockHistoricalDataClient(api_key=api_key, secret_key=secret_key)
 
     def get_account(self) -> AccountSnapshot:
         try:
@@ -33,35 +59,38 @@ class AlpacaProvider(ExecutionProvider):
         except APIError as e:
             raise DataUnavailable(f"Alpaca account fetch failed: {e}") from e
 
-        # Handle both TradeAccount object and dict responses
-        if isinstance(acct, dict):
-            equity = float(acct.get("equity", 0)) if acct.get("equity") is not None else 0.0
-            cash = float(acct.get("cash", 0)) if acct.get("cash") is not None else 0.0
-            buying_power = float(acct.get("buying_power", 0)) if acct.get("buying_power") is not None else 0.0
-        else:
-            equity = float(acct.equity) if acct.equity is not None else 0.0
-            cash = float(acct.cash) if acct.cash is not None else 0.0
-            buying_power = float(acct.buying_power) if acct.buying_power is not None else 0.0
-
-        positions = self._client.get_all_positions()
         position_dict = {}
         for p in positions:
-            if isinstance(p, dict):
-                symbol = p.get("symbol")
-                qty = p.get("qty")
-            else:
-                # Handle Position object
-                symbol = getattr(p, "symbol", None)
-                qty = getattr(p, "qty", None)
+            symbol, qty = _field(p, "symbol"), _field(p, "qty")
             if symbol and qty is not None:
                 position_dict[symbol] = float(qty)
 
         return AccountSnapshot(
-            equity=equity,
-            cash=cash,
-            buying_power=buying_power,
+            equity=_float(_field(acct, "equity")) or 0.0,
+            cash=_float(_field(acct, "cash")) or 0.0,
+            buying_power=_float(_field(acct, "buying_power")) or 0.0,
             positions=position_dict,
         )
+
+    def get_positions(self) -> list[PositionSnapshot]:
+        try:
+            positions = self._client.get_all_positions()
+        except APIError as e:
+            raise DataUnavailable(f"Alpaca positions fetch failed: {e}") from e
+
+        snapshots = []
+        for p in positions:
+            qty = _float(_field(p, "qty")) or 0.0
+            side = str(getattr(_field(p, "side"), "value", _field(p, "side")) or "").lower()
+            is_short = side == "short" or qty < 0
+            snapshots.append(PositionSnapshot(
+                symbol=str(_field(p, "symbol")),
+                quantity=abs(qty),
+                side=OrderSide.SELL if is_short else OrderSide.BUY,
+                avg_entry_price=_float(_field(p, "avg_entry_price")),
+                current_price=_float(_field(p, "current_price")),
+            ))
+        return snapshots
 
     def place_order(self, order: OrderRequest) -> OrderResult:
         side = AlpacaSide.BUY if order.side.value == "BUY" else AlpacaSide.SELL
@@ -71,10 +100,7 @@ class AlpacaProvider(ExecutionProvider):
         protection: dict = {}
         if order.has_protection:
             if order.order_type not in (OrderType.MARKET, OrderType.LIMIT):
-                return OrderResult(
-                    order_id="", status="REJECTED", filled_qty=0.0, avg_fill_price=None,
-                    raw_error="protected entries must be MARKET or LIMIT orders",
-                )
+                return _rejected("protected entries must be MARKET or LIMIT orders")
             both = order.stop_loss is not None and order.take_profit is not None
             protection["order_class"] = OrderClass.BRACKET if both else OrderClass.OTO
             if order.stop_loss is not None:
@@ -103,41 +129,30 @@ class AlpacaProvider(ExecutionProvider):
                 )
             resp = self._client.submit_order(req)
         except APIError as e:
-            return OrderResult(
-                order_id="", status="REJECTED",
-                filled_qty=0.0, avg_fill_price=None, raw_error=str(e),
-            )
+            return _rejected(e)
 
-        # Handle both Order object and dict responses
-        if isinstance(resp, dict):
-            order_id = str(resp.get("id", ""))
-            status = str(resp.get("status", ""))
-            filled_qty = float(resp.get("filled_qty") or 0.0)
-            filled_avg = resp.get("filled_avg_price")
-            avg_fill_price = float(filled_avg) if filled_avg is not None else None
-        else:
-            order_id = str(resp.id)
-            status = str(resp.status)
-            filled_qty = float(resp.filled_qty or 0.0)
-            avg_fill_price = float(resp.filled_avg_price) if resp.filled_avg_price else None
+        return _order_result(resp, protection_status="ATTACHED" if order.has_protection else None)
 
-        return OrderResult(
-            order_id=order_id,
-            status=status,
-            filled_qty=filled_qty,
-            avg_fill_price=avg_fill_price,
-            protection_status="ATTACHED" if order.has_protection else None,
-        )
+    def close_position(self, symbol: str) -> OrderResult:
+        # Bracket legs hold the shares, so a plain close is rejected until they are cancelled.
+        try:
+            open_orders = self._client.get_orders(GetOrdersRequest(status=QueryOrderStatus.OPEN, symbols=[symbol]))
+            for open_order in open_orders:
+                self._client.cancel_order_by_id(_field(open_order, "id"))
+            resp = self._client.close_position(symbol)
+        except APIError as e:
+            return _rejected(e)
+        return _order_result(resp)
 
     def close_all_positions(self) -> list[OrderResult]:
         try:
             responses = self._client.close_all_positions(cancel_orders=True)
         except APIError as e:
-            return [OrderResult(order_id="", status="REJECTED", filled_qty=0.0, avg_fill_price=None, raw_error=str(e))]
+            return [_rejected(e)]
         return [
             OrderResult(
-                order_id=str(getattr(r, "order_id", "") or ""),
-                status=str(getattr(r, "status", "")),
+                order_id=str(_field(r, "order_id") or ""),
+                status=str(_field(r, "status") or ""),
                 filled_qty=0.0,
                 avg_fill_price=None,
             )
@@ -152,16 +167,19 @@ class AlpacaProvider(ExecutionProvider):
             return False
 
     def get_last_price(self, symbol: str) -> float:
-        # Note: TradingClient doesn't serve quotes — use alpaca.data.StockHistoricalDataClient
-        # for real price feeds. Left as a clear extension point rather than faked.
-        raise NotImplementedError("Wire up alpaca.data.StockHistoricalDataClient for quotes")
+        try:
+            trades = self._data.get_stock_latest_trade(StockLatestTradeRequest(symbol_or_symbols=symbol))
+        except APIError as e:
+            raise DataUnavailable(f"Alpaca latest trade fetch failed for {symbol}: {e}") from e
+        trade = trades.get(symbol) if isinstance(trades, dict) else None
+        price = _float(_field(trade, "price")) if trade is not None else None
+        if not price:
+            raise DataUnavailable(f"Alpaca returned no trade price for {symbol}")
+        return price
 
     def is_market_open(self, symbol: str) -> bool:
         try:
             clock = self._client.get_clock()
-            if isinstance(clock, dict):
-                return bool(clock.get("is_open", False))
-            else:
-                return bool(clock.is_open)
         except APIError as e:
             raise DataUnavailable(f"Alpaca clock fetch failed: {e}") from e
+        return bool(_field(clock, "is_open"))

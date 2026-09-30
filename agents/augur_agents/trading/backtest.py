@@ -8,6 +8,42 @@ from datetime import date, datetime
 from typing import Any
 
 
+def simulate_bracket_exit(
+    *, side: str, stop: float, target: float, bars: list[dict[str, float]]
+) -> tuple[float, str, int]:
+    """Walk OHLC bars after entry and return (exit_price, reason, bar_index).
+
+    Conservative by construction: a bar that opens through the stop fills at
+    the open (gap slippage); a bar whose range touches both stop and target is
+    assumed to hit the stop first, since intrabar order is unknown. With no
+    exit, the position closes at the last bar's close ("time_exit").
+    """
+    if not bars:
+        raise ValueError("need at least one bar after entry")
+    is_long = side in {"LONG", "BUY"}
+    for index, bar in enumerate(bars):
+        open_, high, low = float(bar["open"]), float(bar["high"]), float(bar["low"])
+        if is_long:
+            if open_ <= stop:
+                return open_, "stop_gap", index
+            if open_ >= target:
+                return open_, "target_gap", index
+            if low <= stop:
+                return stop, "stop", index
+            if high >= target:
+                return target, "target", index
+        else:
+            if open_ >= stop:
+                return open_, "stop_gap", index
+            if open_ <= target:
+                return open_, "target_gap", index
+            if high >= stop:
+                return stop, "stop", index
+            if low <= target:
+                return target, "target", index
+    return float(bars[-1]["close"]), "time_exit", len(bars) - 1
+
+
 @dataclass
 class TradeResult:
     symbol: str
@@ -96,6 +132,20 @@ class PaperTradingBacktester:
             key = exit_time.date().isoformat()
             self.daily_pnl[key] = self.daily_pnl.get(key, 0.0) + pnl
         return result
+
+    def execute_bracket(
+        self,
+        trade: dict[str, Any],
+        bars: list[dict[str, float]],
+        slippage_bps: float = 5.0,
+        *,
+        exit_time: datetime | None = None,
+    ) -> tuple[TradeResult, str]:
+        """Resolve a bracketed trade (`stop`, `target` in `trade`) against the bars that followed."""
+        exit_price, reason, _ = simulate_bracket_exit(
+            side=trade.get("side", "LONG"), stop=float(trade["stop"]), target=float(trade["target"]), bars=bars
+        )
+        return self.execute_trade(trade, exit_price, slippage_bps, exit_time=exit_time), reason
 
     def mark(self, equity: float, timestamp: datetime | None = None) -> None:
         """Record mark-to-market equity (realized capital plus open-position P&L)."""

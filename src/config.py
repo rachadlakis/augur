@@ -6,6 +6,8 @@ Nothing here should ever be hard-coded or logged.
 """
 
 from enum import Enum
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import SecretStr
 
@@ -15,9 +17,14 @@ class TradingMode(str, Enum):
     LIVE = "live"
 
 
+# Resolve .env from the repo root, not the working directory, so launching
+# from another folder can't silently start without credentials.
+ENV_FILE = Path(__file__).resolve().parents[1] / ".env"
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=ENV_FILE,
         env_file_encoding="utf-8",
         extra="ignore"  # Ignore extra environment variables not defined in this model
     )

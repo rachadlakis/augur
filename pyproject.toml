@@ -88,6 +88,9 @@ training = [
 #   uv run pytest dist_kit/tests -m "not smoke"
 asyncio_mode = "auto"
 addopts = "-ra -q"
+# Lets `pytest agents/tests tests` run from the repo root without an install:
+# agents/ holds augur_agents, src/ holds config, the root holds providers.
+pythonpath = ["agents", "src", "."]
 markers = [
     "smoke: subprocess training runs; ddp/fsdp need a GPU",
     "integration: needs a warm Hugging Face cache",

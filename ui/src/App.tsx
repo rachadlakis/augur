@@ -1,219 +1,154 @@
-import React, { useState, useEffect, useRef } from 'react'
-import './App-new.css'
-import { PortfolioDashboard } from './components/PortfolioDashboard'
-import { TradeHistory } from './components/TradeHistory'
-import { ChatInterface } from './components/ChatInterface'
-import { AlertCenter } from './components/AlertCenter'
-import { HoldingsDetail } from './components/HoldingsDetail'
-// Inline types - avoiding import from types.ts which seems to cause issues
-interface PortfolioState {
-  account_equity: number
-  cash: number
-  buying_power: number
-  total_pnl: number
-  total_pnl_pct: number
-  max_drawdown: number
-  positions: any[]
-  recent_trades: any[]
-  timestamp: string
+import { useEffect, useState } from 'react'
+import { useDashboard } from './hooks/useDashboard'
+import type { Connection } from './hooks/useDashboard'
+import { useToasts } from './hooks/useToasts'
+import { Badge, Empty, Icon, Toasts } from './components/ui'
+import type { IconName } from './components/ui'
+import { Overview } from './pages/Overview'
+import { Markets } from './pages/Markets'
+import { Positions } from './pages/Positions'
+import { Trades } from './pages/Trades'
+import { Assistant } from './pages/Assistant'
+import { Integrations } from './pages/Integrations'
+import { Safety } from './pages/Safety'
+
+type Page = 'overview' | 'markets' | 'positions' | 'trades' | 'assistant' | 'integrations' | 'safety'
+
+const NAV: { id: Page; label: string; icon: IconName }[] = [
+  { id: 'overview', label: 'Overview', icon: 'overview' },
+  { id: 'markets', label: 'Markets', icon: 'markets' },
+  { id: 'positions', label: 'Positions', icon: 'positions' },
+  { id: 'trades', label: 'Trades', icon: 'trades' },
+  { id: 'assistant', label: 'Assistant', icon: 'assistant' },
+  { id: 'integrations', label: 'Integrations', icon: 'integrations' },
+  { id: 'safety', label: 'Safety', icon: 'safety' },
+]
+
+const CONNECTION: Record<Connection, { label: string; status: 'good' | 'warning' | 'critical' | 'neutral' }> = {
+  live: { label: 'Live', status: 'good' },
+  polling: { label: 'Reconnecting', status: 'warning' },
+  connecting: { label: 'Connecting', status: 'neutral' },
+  offline: { label: 'Offline', status: 'critical' },
 }
 
-interface Alert {
-  alert_type: string
-  symbol?: string
-  message: string
-  severity: string
-  timestamp: string
+function readStored(key: string): string | null {
+  try { return localStorage.getItem(key) } catch { return null }
 }
 
-function App() {
-  const [currentView, setCurrentView] = useState<'dashboard' | 'holdings'>('dashboard')
-  const [portfolio, setPortfolio] = useState<PortfolioState>({
-    account_equity: 100000,
-    cash: 30000,
-    buying_power: 50000,
-    total_pnl: 0,
-    total_pnl_pct: 0,
-    max_drawdown: 0,
-    positions: [],
-    recent_trades: [],
-    timestamp: new Date().toISOString(),
-  })
+function writeStored(key: string, value: string) {
+  try { localStorage.setItem(key, value) } catch { /* private mode: fine */ }
+}
 
-  const [alerts, setAlerts] = useState<Alert[]>([])
-  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected' | 'connecting'>('connecting')
-  const wsRef = useRef<WebSocket | null>(null)
-  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+function pageFromHash(): Page {
+  const hash = window.location.hash.slice(1)
+  return (NAV.some((n) => n.id === hash) ? hash : 'overview') as Page
+}
 
-  // WebSocket connection management
+export default function App() {
+  const { portfolio, health, alerts, connection, refresh } = useDashboard()
+  const { toasts, notify, dismiss } = useToasts()
+  const [page, setPage] = useState<Page>(pageFromHash)
+  const [theme, setTheme] = useState<'light' | 'dark' | null>(() => readStored('augur-theme') as 'light' | 'dark' | null)
+
   useEffect(() => {
-    const connectWebSocket = () => {
-      setConnectionStatus('connecting')
-      try {
-        const ws = new WebSocket('ws://localhost:8000/ws/dashboard')
-        ws.onopen = () => {
-          setConnectionStatus('connected')
-        }
-        ws.onmessage = (event) => {
-          try {
-            const message = JSON.parse(event.data)
-            if (message.type === 'portfolio_update' && message.data) {
-              setPortfolio(message.data)
-            }
-            if (message.type === 'alert' && message.data) {
-              setAlerts((prev) => [message.data, ...prev].slice(0, 50))
-            }
-          } catch (e) {
-            // silent
-          }
-        }
-        ws.onerror = () => {
-          setConnectionStatus('disconnected')
-        }
-        ws.onclose = () => {
-          setConnectionStatus('disconnected')
-          reconnectTimeoutRef.current = setTimeout(() => {
-            connectWebSocket()
-          }, 3000)
-        }
-        wsRef.current = ws
-      } catch (e) {
-        setConnectionStatus('disconnected')
-      }
-    }
-    connectWebSocket()
-    return () => {
-      if (wsRef.current) wsRef.current.close()
-      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current)
-    }
+    const onHash = () => setPage(pageFromHash())
+    window.addEventListener('hashchange', onHash)
+    return () => window.removeEventListener('hashchange', onHash)
   }, [])
 
-  // REST API fallback
   useEffect(() => {
-    if (connectionStatus === 'connected') return
-    const interval = setInterval(async () => {
-      try {
-        const response = await fetch('http://localhost:8000/api/portfolio')
-        if (response.ok) {
-          const data = await response.json()
-          setPortfolio(data)
-        }
-      } catch (e) {
-        // silent
-      }
-    }, 5000)
-    return () => clearInterval(interval)
-  }, [connectionStatus])
-
-  const handleSendCommand = async (text: string) => {
-    if (!text.trim()) return
-    try {
-      const response = await fetch('http://localhost:8000/api/command', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }),
-      })
-      if (response.ok) {
-        const result = await response.json()
-        if (result.understood && result.action) {
-          handleAction(result.action, result.params || {})
-        }
-      }
-    } catch (e) {
-      // silent
+    if (theme) {
+      document.documentElement.dataset.theme = theme
+      writeStored('augur-theme', theme)
     }
-  }
+  }, [theme])
 
-  const handleAction = async (action: string, params: any) => {
-    try {
-      const response = await fetch('http://localhost:8000/api/action', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: action, ...params }),
-      })
-      if (response.ok) {
-        setAlerts((prev) => [
-          {
-            alert_type: 'SUCCESS',
-            message: `${action} executed`,
-            severity: 'INFO',
-            timestamp: new Date().toISOString(),
-          },
-          ...prev,
-        ])
-      }
-    } catch (e) {
-      setAlerts((prev) => [
-        {
-          alert_type: 'ERROR',
-          message: `Failed to execute ${action}`,
-          severity: 'ERROR',
-          timestamp: new Date().toISOString(),
-        },
-        ...prev,
-      ])
+  const go = (next: Page) => { window.location.hash = next }
+  const isDark = theme === 'dark' || (theme === null && window.matchMedia('(prefers-color-scheme: dark)').matches)
+  const halted = health?.halted ?? portfolio?.halted ?? false
+  const conn = CONNECTION[connection]
+
+  const content = () => {
+    if (page === 'integrations') return <Integrations notify={notify} />
+    if (page === 'markets') return <Markets onConnect={() => go('integrations')} />
+    if (!portfolio) {
+      return (
+        <div className="page">
+          {connection === 'offline' ? (
+            <div className="card">
+              <Empty title="The Augur server isn't running">
+                Start it from the project folder with <code>python src/dashboard_api.py</code>, then this page connects by itself.
+              </Empty>
+            </div>
+          ) : (
+            <>
+              <div className="skeleton hero-skel" />
+              <div className="tiles">{[0, 1, 2, 3].map((i) => <div key={i} className="skeleton tile-skel" />)}</div>
+              <div className="skeleton tall" />
+            </>
+          )}
+        </div>
+      )
     }
-  }
-
-  const handlePositionClose = (symbol: string) => {
-    handleAction('CLOSE_POSITION', { symbol })
-  }
-
-  // Handle conditional rendering
-  if (currentView === 'holdings') {
-    return <HoldingsDetail positions={portfolio.positions} onBack={() => setCurrentView('dashboard')} />
+    switch (page) {
+      case 'positions': return <Positions positions={portfolio.positions} notify={notify} />
+      case 'trades': return <Trades trades={portfolio.recent_trades} />
+      case 'assistant': return <Assistant portfolio={portfolio} alerts={alerts} notify={notify} />
+      case 'safety': return <Safety health={health} portfolio={portfolio} notify={notify} onChanged={refresh} />
+      default: return <Overview portfolio={portfolio} alerts={alerts} onNavigate={go} />
+    }
   }
 
   return (
-    <div className="app">
-      <header className="app-header">
-        <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-          <h1>📊 Augur Trading Dashboard</h1>
-          <button
-            onClick={() => setCurrentView('holdings')}
-            style={{
-              background: 'linear-gradient(135deg, #8b5cf6, #6d28d9)',
-              color: 'white',
-              border: 'none',
-              padding: '8px 16px',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontSize: '14px',
-              fontWeight: '600',
-              whiteSpace: 'nowrap',
-              transition: 'all 0.3s ease',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translateY(-2px)'
-              e.currentTarget.style.boxShadow = '0 8px 16px rgba(139, 92, 246, 0.3)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)'
-              e.currentTarget.style.boxShadow = 'none'
-            }}
-          >
-            📈 View Holdings
-          </button>
+    <div className="shell">
+      <nav className="sidebar" aria-label="Main">
+        <div className="brand">
+          <span className="brand-mark" aria-hidden="true">◆</span>
+          <span className="brand-name">Augur</span>
         </div>
-        <div className="connection-status">
-          <span className={`status-indicator ${connectionStatus}`}></span>
-          {connectionStatus === 'connected' && 'Connected'}
-          {connectionStatus === 'connecting' && 'Connecting...'}
-          {connectionStatus === 'disconnected' && 'Disconnected'}
-        </div>
-      </header>
-      <div className="app-layout">
-        <div className="left-panel">
-          <PortfolioDashboard portfolio={portfolio} onAction={handlePositionClose} />
-          <TradeHistory trades={portfolio.recent_trades} />
-        </div>
-        <div className="right-panel">
-          <ChatInterface onSendCommand={handleSendCommand} />
-          <AlertCenter alerts={alerts} />
-        </div>
+        <ul>
+          {NAV.map((item) => (
+            <li key={item.id}>
+              <a
+                href={`#${item.id}`}
+                className={`nav-item ${page === item.id ? 'active' : ''}`}
+                aria-current={page === item.id ? 'page' : undefined}
+              >
+                <Icon name={item.icon} />
+                <span className="nav-label">{item.label}</span>
+                {item.id === 'positions' && portfolio && portfolio.positions.length > 0 && (
+                  <span className="nav-count">{portfolio.positions.length}</span>
+                )}
+                {item.id === 'safety' && halted && <span className="nav-dot" aria-label="halted" />}
+              </a>
+            </li>
+          ))}
+        </ul>
+        <div className="sidebar-foot muted small">Practice first. Real money only when you mean it.</div>
+      </nav>
+
+      <div className="main">
+        <header className="topbar">
+          <h1>{NAV.find((n) => n.id === page)?.label}</h1>
+          <div className="topbar-right">
+            {halted && <Badge status="critical">Trading halted</Badge>}
+            {portfolio && (portfolio.mode === 'demo'
+              ? <Badge status="neutral">Demo data</Badge>
+              : <Badge status="warning">Broker connected</Badge>)}
+            <Badge status={conn.status}>{conn.label}</Badge>
+            <button
+              className="icon-btn"
+              aria-label={isDark ? 'Switch to light theme' : 'Switch to dark theme'}
+              onClick={() => setTheme(isDark ? 'light' : 'dark')}
+            >
+              <Icon name={isDark ? 'sun' : 'moon'} />
+            </button>
+          </div>
+        </header>
+        <main>{content()}</main>
       </div>
+
+      <Toasts toasts={toasts} onDismiss={dismiss} />
     </div>
   )
 }
-
-export default App

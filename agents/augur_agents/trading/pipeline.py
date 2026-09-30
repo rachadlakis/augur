@@ -5,17 +5,20 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from .asset_config import AssetConfig
 from .calibration import SpecialistCalibrator
 from .execution import ExecutionPlanner
 from .guard import TradingGuard
-from .orchestrator import OrchestratorConsensus
+from .orchestrator import CONSENSUS_AGENT, OrchestratorConsensus
 from .risk import RiskManager
 from .specialists import (
     DerivativesAnalyst,
+    FundamentalsAnalyst,
     MacroAnalyst,
     NewsSentimentAnalyst,
     OnChainAnalyst,
     TechnicalAnalyst,
+    TermStructureAnalyst,
 )
 
 
@@ -58,6 +61,9 @@ class TradingPipeline:
         news_events: list[dict[str, Any]] | None = None,
         derivatives_metrics: dict[str, Any] | None = None,
         macro_metrics: dict[str, Any] | None = None,
+        fundamentals_data: dict[str, Any] | None = None,
+        term_structure: dict[str, Any] | None = None,
+        asset_class: str = "crypto",
         entry: float | None = None,
         stop: float | None = None,
         target: float | None = None,
@@ -73,12 +79,22 @@ class TradingPipeline:
             stop_atr_multiple=self.risk.stop_atr_multiple,
             target_atr_multiple=self.risk.target_atr_multiple,
         ).analyze(market_snapshot)
-        onchain = OnChainAnalyst().analyze(onchain_metrics or {})
-        news = NewsSentimentAnalyst().analyze(news_events or [])
+        news = NewsSentimentAnalyst().analyze(news_events or [], now)
         derivatives = DerivativesAnalyst().analyze(derivatives_metrics or {})
         macro = MacroAnalyst().analyze(macro_metrics or {})
+        specialists = {"technical": technical, "news": news, "derivatives": derivatives, "macro": macro}
 
-        outputs = [technical, onchain, news, derivatives, macro]
+        # Route by asset class: on-chain flows only exist for crypto, fundamentals only
+        # for equities, and a futures curve only for commodities.
+        config = AssetConfig(asset_class)  # type: ignore[arg-type]
+        if config.has_onchain:
+            specialists["onchain"] = OnChainAnalyst().analyze(onchain_metrics or {})
+        if config.has_fundamentals:
+            specialists["fundamentals"] = FundamentalsAnalyst().analyze(fundamentals_data or {})
+        if config.has_term_structure:
+            specialists["term_structure"] = TermStructureAnalyst().analyze(term_structure or {})
+
+        outputs = list(specialists.values())
         consensus = self.orchestrator.synthesize(outputs)
         decision = consensus["decision"]
         vetoes: list[str] = []
@@ -162,19 +178,41 @@ class TradingPipeline:
 
         risk_summary = "; ".join(risk_eval["reasons"]) if risk_eval["reasons"] else "no risk vetoes"
 
+        # One plain list of why this is (or isn't) a trade, for people and UIs.
+        if decision not in {"BUY", "SELL"}:
+            reasons = [f"specialists did not agree strongly enough (score {consensus['score']:+.2f}, needs ±0.25 and no conflict)"]
+        else:
+            reasons = vetoes + [r for r in risk_eval["reasons"]] + [r for r in execution["reasons"] if r not in risk_eval["reasons"]]
+            reasons = list(dict.fromkeys(reasons))
+
         return {
             "decision": final_decision,
             "consensus": consensus,
             "risk_summary": risk_summary,
             "vetoes": vetoes,
+            "reasons": reasons,
             "risk": risk_eval,
             "execution": execution,
             "order": order,
-            "specialists": {
-                "technical": technical,
-                "onchain": onchain,
-                "news": news,
-                "derivatives": derivatives,
-                "macro": macro,
-            },
+            "specialists": specialists,
         }
+
+    def record_outcome(self, result: dict[str, Any], forward_return: float) -> bool:
+        """Feed the realized forward return of the asset back into the calibrator.
+
+        Call once per evaluated decision, after the signal's horizon, with the
+        asset's return over that horizon (not the strategy's P&L). Every
+        directional specialist call and the consensus direction are scored,
+        including decisions that were vetoed, so vetoes don't hide skill.
+        Returns False when there is no calibrator to update.
+        """
+        if self.calibrator is None:
+            return False
+        for name, output in result["specialists"].items():
+            self.calibrator.record(
+                str(output.get("agent", name)), str(output.get("signal", "")), float(output.get("confidence", 0.0)), forward_return
+            )
+        score = float(result["consensus"].get("score", 0.0))
+        if score:
+            self.calibrator.record(CONSENSUS_AGENT, "BUY" if score > 0 else "SELL", abs(score), forward_return)
+        return True

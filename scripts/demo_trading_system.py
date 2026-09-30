@@ -12,7 +12,16 @@ This script demonstrates the complete trading pipeline from the implementation_q
 8. Baseline comparison (buy-and-hold vs system)
 """
 
-from augur_agents.contracts import MarketSnapshot
+import sys
+from pathlib import Path
+
+# Runnable as `python scripts/demo_trading_system.py` from anywhere, and on
+# Windows consoles that default to cp1252 (the output uses arrows and checks).
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "agents"))
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
+from augur_agents.contracts import MarketSnapshot  # noqa: E402
 from augur_agents.trading import (
     AssetConfig,
     BaselineComparison,

@@ -136,6 +136,8 @@ def binance_provider(module, client):
     provider = module.BinanceProvider.__new__(module.BinanceProvider)
     provider._client = client
     provider._symbol_info = {}
+    provider._order_symbols = {}
+    provider.quote_asset = "USDT"
     return provider
 
 
@@ -182,3 +184,115 @@ def test_binance_rejects_protected_non_market_entries(binance_module):
     ))
     assert result.status == "REJECTED"
     assert client.orders == []
+
+
+# --- Positions, equity, cancel and close (round 2) -------------------------------------
+
+
+class FakeBinanceAccountClient(FakeBinanceClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.cancelled: list[dict] = []
+
+    def get_account(self):
+        return {"balances": [
+            {"asset": "USDT", "free": "1000", "locked": "100"},
+            {"asset": "BTC", "free": "0.5", "locked": "0"},
+            {"asset": "WEIRD", "free": "3", "locked": "0"},
+        ]}
+
+    def get_all_tickers(self):
+        return [{"symbol": "BTCUSDT", "price": "100"}]
+
+    def cancel_order(self, **kwargs):
+        self.cancelled.append(kwargs)
+
+    def get_open_orders(self, symbol=None):
+        return [{"symbol": "BTCUSDT", "orderId": 7}]
+
+    def get_asset_balance(self, asset):
+        return {"asset": asset, "free": "0.5004"}
+
+
+def test_binance_equity_marks_holdings_and_reports_unpriced(binance_module):
+    account = binance_provider(binance_module, FakeBinanceAccountClient()).get_account()
+    assert account.equity == pytest.approx(1100 + 0.5 * 100)
+    assert account.cash == pytest.approx(1000)
+    assert account.unpriced_assets == ("WEIRD",)
+
+
+def test_binance_positions_never_invent_cost_basis(binance_module):
+    positions = binance_provider(binance_module, FakeBinanceAccountClient()).get_positions()
+    btc = next(p for p in positions if p.symbol == "BTCUSDT")
+    assert btc.avg_entry_price is None
+    assert btc.current_price == pytest.approx(100)
+
+
+def test_binance_cancel_uses_remembered_symbol(binance_module):
+    client = FakeBinanceAccountClient()
+    provider = binance_provider(binance_module, client)
+    assert provider.cancel_order("999") is False  # unknown order: symbol unknown, nothing sent
+    provider.place_order(OrderRequest(symbol="BTCUSDT", side=OrderSide.BUY, order_type=OrderType.MARKET, quantity=0.5))
+    assert provider.cancel_order("1") is True
+    assert client.cancelled[-1] == {"symbol": "BTCUSDT", "orderId": 1}
+
+
+def test_binance_close_position_cancels_legs_then_sells_lot_rounded(binance_module):
+    client = FakeBinanceAccountClient()
+    result = binance_provider(binance_module, client).close_position("BTCUSDT")
+    assert client.cancelled[0] == {"symbol": "BTCUSDT", "orderId": 7}
+    assert client.orders[-1]["side"] == "SELL"
+    assert client.orders[-1]["quantity"] == pytest.approx(0.5)
+    assert result.status == "FILLED"
+
+
+class FakeAlpacaPositionsClient(FakeAlpacaClient):
+    def __init__(self) -> None:
+        super().__init__()
+        self.cancelled: list = []
+        self.closed: list = []
+
+    def get_all_positions(self):
+        return [
+            {"symbol": "AAPL", "qty": "10", "side": "long", "avg_entry_price": "190", "current_price": "200"},
+            {"symbol": "TSLA", "qty": "-5", "side": "short", "avg_entry_price": "250", "current_price": "230"},
+        ]
+
+    def get_orders(self, filter=None):
+        return [{"id": "leg-1"}, {"id": "leg-2"}]
+
+    def cancel_order_by_id(self, order_id):
+        self.cancelled.append(order_id)
+
+    def close_position(self, symbol):
+        self.closed.append(symbol)
+        return {"id": "close-9", "status": "accepted", "filled_qty": "0", "filled_avg_price": None}
+
+
+def test_alpaca_positions_carry_real_prices_and_sides(alpaca):
+    provider, _ = alpaca
+    provider._client = FakeAlpacaPositionsClient()
+    aapl, tsla = provider.get_positions()
+    assert (aapl.side, aapl.quantity, aapl.avg_entry_price) == (OrderSide.BUY, 10, 190)
+    assert (tsla.side, tsla.quantity) == (OrderSide.SELL, 5)
+
+
+def test_alpaca_close_position_cancels_bracket_legs_first(alpaca):
+    provider, _ = alpaca
+    client = FakeAlpacaPositionsClient()
+    provider._client = client
+    result = provider.close_position("AAPL")
+    assert client.cancelled == ["leg-1", "leg-2"]
+    assert client.closed == ["AAPL"]
+    assert result.order_id == "close-9"
+
+
+def test_alpaca_last_price_comes_from_data_client(alpaca):
+    provider, _ = alpaca
+
+    class FakeData:
+        def get_stock_latest_trade(self, req):
+            return {"AAPL": types.SimpleNamespace(price=201.5)}
+
+    provider._data = FakeData()
+    assert provider.get_last_price("AAPL") == 201.5

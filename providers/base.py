@@ -60,6 +60,18 @@ class AccountSnapshot:
     cash: float
     buying_power: float
     positions: dict[str, float]  # symbol -> quantity held
+    # Holdings that could not be priced and are therefore NOT in `equity`.
+    # Equity is a lower bound whenever this is non-empty.
+    unpriced_assets: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class PositionSnapshot:
+    symbol: str
+    quantity: float                 # always positive; direction is in `side`
+    side: OrderSide                 # BUY = long, SELL = short
+    avg_entry_price: float | None   # None when the venue does not report it
+    current_price: float | None
 
 
 class DataUnavailable(Exception):
@@ -85,6 +97,14 @@ class ExecutionProvider(ABC):
     def is_market_open(self, symbol: str) -> bool:
         """Crypto: effectively always True. Stocks: checks session hours."""
         ...
+
+    def get_positions(self) -> list[PositionSnapshot]:
+        """Open positions with real entry and mark prices, never placeholders."""
+        raise NotImplementedError(f"{type(self).__name__} does not implement get_positions")
+
+    def close_position(self, symbol: str) -> OrderResult:
+        """Cancel the symbol's open orders (e.g. bracket legs), then flatten it."""
+        raise NotImplementedError(f"{type(self).__name__} does not implement close_position")
 
     def close_all_positions(self) -> list[OrderResult]:
         """Kill switch: cancel open orders and flatten every position."""
