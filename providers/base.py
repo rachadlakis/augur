@@ -31,6 +31,14 @@ class OrderRequest:
     quantity: float
     limit_price: float | None = None
     stop_price: float | None = None
+    # Exit protection submitted with the entry. A position must never be open
+    # without its stop: set both to request a bracket.
+    stop_loss: float | None = None
+    take_profit: float | None = None
+
+    @property
+    def has_protection(self) -> bool:
+        return self.stop_loss is not None or self.take_profit is not None
 
 
 @dataclass(frozen=True)
@@ -40,6 +48,10 @@ class OrderResult:
     filled_qty: float
     avg_fill_price: float | None
     raw_error: str | None = None
+    # None: no protection requested. "ATTACHED": exits are live at the venue.
+    # "FLATTENED": attaching failed, so the fill was closed. "UNPROTECTED": both
+    # failed and the position is open without exits; treat as an incident.
+    protection_status: str | None = None
 
 
 @dataclass(frozen=True)
@@ -73,6 +85,10 @@ class ExecutionProvider(ABC):
     def is_market_open(self, symbol: str) -> bool:
         """Crypto: effectively always True. Stocks: checks session hours."""
         ...
+
+    def close_all_positions(self) -> list[OrderResult]:
+        """Kill switch: cancel open orders and flatten every position."""
+        raise NotImplementedError(f"{type(self).__name__} does not implement close_all_positions")
 
 
 class NewsProvider(ABC):

@@ -4,8 +4,11 @@ Requires: pip install alpaca-py
 """
 
 from alpaca.trading.client import TradingClient
-from alpaca.trading.requests import MarketOrderRequest, LimitOrderRequest, StopOrderRequest
-from alpaca.trading.enums import OrderSide as AlpacaSide, TimeInForce
+from alpaca.trading.requests import (
+    MarketOrderRequest, LimitOrderRequest, StopOrderRequest,
+    StopLossRequest, TakeProfitRequest,
+)
+from alpaca.trading.enums import OrderClass, OrderSide as AlpacaSide, TimeInForce
 from alpaca.common.exceptions import APIError
 
 from config import Settings
@@ -63,18 +66,34 @@ class AlpacaProvider(ExecutionProvider):
     def place_order(self, order: OrderRequest) -> OrderResult:
         side = AlpacaSide.BUY if order.side.value == "BUY" else AlpacaSide.SELL
 
+        # Protection rides on the entry as one broker-side order (bracket, or OTO
+        # with a single exit), so a fill can never exist without its stop.
+        protection: dict = {}
+        if order.has_protection:
+            if order.order_type not in (OrderType.MARKET, OrderType.LIMIT):
+                return OrderResult(
+                    order_id="", status="REJECTED", filled_qty=0.0, avg_fill_price=None,
+                    raw_error="protected entries must be MARKET or LIMIT orders",
+                )
+            both = order.stop_loss is not None and order.take_profit is not None
+            protection["order_class"] = OrderClass.BRACKET if both else OrderClass.OTO
+            if order.stop_loss is not None:
+                protection["stop_loss"] = StopLossRequest(stop_price=float(order.stop_loss))
+            if order.take_profit is not None:
+                protection["take_profit"] = TakeProfitRequest(limit_price=float(order.take_profit))
+
         try:
             req: MarketOrderRequest | LimitOrderRequest | StopOrderRequest
             if order.order_type == OrderType.MARKET:
                 req = MarketOrderRequest(
                     symbol=order.symbol, qty=order.quantity,
-                    side=side, time_in_force=TimeInForce.DAY,
+                    side=side, time_in_force=TimeInForce.DAY, **protection,
                 )
             elif order.order_type == OrderType.LIMIT:
                 limit_price = float(order.limit_price) if order.limit_price is not None else 0.0
                 req = LimitOrderRequest(
                     symbol=order.symbol, qty=order.quantity, side=side,
-                    time_in_force=TimeInForce.DAY, limit_price=limit_price,
+                    time_in_force=TimeInForce.DAY, limit_price=limit_price, **protection,
                 )
             else:  # STOP_MARKET / STOP_LIMIT
                 stop_price = float(order.stop_price) if order.stop_price is not None else 0.0
@@ -107,7 +126,23 @@ class AlpacaProvider(ExecutionProvider):
             status=status,
             filled_qty=filled_qty,
             avg_fill_price=avg_fill_price,
+            protection_status="ATTACHED" if order.has_protection else None,
         )
+
+    def close_all_positions(self) -> list[OrderResult]:
+        try:
+            responses = self._client.close_all_positions(cancel_orders=True)
+        except APIError as e:
+            return [OrderResult(order_id="", status="REJECTED", filled_qty=0.0, avg_fill_price=None, raw_error=str(e))]
+        return [
+            OrderResult(
+                order_id=str(getattr(r, "order_id", "") or ""),
+                status=str(getattr(r, "status", "")),
+                filled_qty=0.0,
+                avg_fill_price=None,
+            )
+            for r in responses
+        ]
 
     def cancel_order(self, order_id: str) -> bool:
         try:

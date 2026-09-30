@@ -9,40 +9,74 @@ from __future__ import annotations
 
 from typing import Any
 
+from .risk import RiskManager
+
+
+def _abstain(agent: str, reason: str) -> dict[str, Any]:
+    """Missing inputs never vote: a default BUY on empty data is a structural long bias."""
+    return {
+        "agent": agent,
+        "signal": "NO_TRADE",
+        "confidence": 0.0,
+        "evidence": [reason],
+        "risk_flags": ["data_missing"],
+    }
+
 
 class TechnicalAnalyst:
+    def __init__(self, *, stop_atr_multiple: float = 2.0, target_atr_multiple: float = 4.0) -> None:
+        self.stop_atr_multiple = stop_atr_multiple
+        self.target_atr_multiple = target_atr_multiple
+
     def analyze(self, snapshot: Any) -> dict[str, Any]:
         price = float(getattr(snapshot, "price", 0.0) or 0.0)
         ohlcv = getattr(snapshot, "ohlcv", {}) or {}
         volatility = getattr(snapshot, "volatility", {}) or {}
         atr = float(volatility.get("atr", 0.0) or 0.0)
         if not ohlcv:
-            return {"agent": "technical", "signal": "NO_TRADE", "confidence": 0.0, "evidence": ["missing OHLCV"], "risk_flags": ["data_missing"]}
+            return _abstain("technical", "missing OHLCV")
+        if price <= 0 or atr <= 0:
+            return _abstain("technical", "missing price or ATR; stops cannot be volatility-scaled")
 
         last_close = float(ohlcv.get("1h", {}).get("close", price))
         trend_strength = 1.0 if last_close >= price else 0.0
         signal = "BUY" if trend_strength > 0 else "HOLD"
-        confidence = min(0.95, max(0.4, 0.55 + (atr / max(price, 1.0)) * 5.0))
+        # Conviction falls as volatility rises: realized P&L degrades with entry volatility.
+        atr_fraction = atr / price
+        confidence = min(0.7, max(0.3, 0.7 - atr_fraction * 5.0))
+        levels = RiskManager.bracket_levels(
+            entry=price,
+            atr=atr,
+            side="BUY",
+            stop_multiple=self.stop_atr_multiple,
+            target_multiple=self.target_atr_multiple,
+        )
+        risk_flags = ["high_volatility"] if atr_fraction > 0.05 else []
         return {
             "agent": "technical",
             "signal": signal,
             "confidence": round(float(confidence), 4),
             "time_horizon": "4h-24h",
-            "entry_zone": {"lower": price * 0.99, "upper": price * 1.01},
-            "stop_level": price * 0.97,
-            "target_zone": {"min": price * 1.04, "max": price * 1.08},
+            "entry_zone": {"lower": price - 0.5 * atr, "upper": price + 0.5 * atr},
+            "stop_level": levels["stop"],
+            "target_zone": {"min": levels["target"], "max": price + (self.target_atr_multiple + 1.0) * atr},
             "trend": "uptrend" if signal == "BUY" else "neutral",
             "momentum": "positive" if signal == "BUY" else "mixed",
-            "volatility": "moderate",
-            "support_resistance": {"support": price * 0.98, "resistance": price * 1.02},
-            "evidence": ["multi-timeframe close prices remain above prior structure", "volatility is not extreme"],
+            "volatility": "high" if risk_flags else "moderate",
+            "support_resistance": {"support": price - atr, "resistance": price + atr},
+            "evidence": [
+                "multi-timeframe close prices remain above prior structure",
+                f"stop and target are {self.stop_atr_multiple:g}x / {self.target_atr_multiple:g}x ATR",
+            ],
             "invalidation_reason": "break below 1h support or loss of volume confirmation",
-            "risk_flags": [],
+            "risk_flags": risk_flags,
         }
 
 
 class OnChainAnalyst:
     def analyze(self, metrics: dict[str, Any]) -> dict[str, Any]:
+        if not metrics:
+            return _abstain("onchain", "no on-chain metrics supplied")
         netflow = float(metrics.get("netflow", 0.0) or 0.0)
         transfer_type = metrics.get("transfer_classification", "unknown")
         if transfer_type == "unknown":
@@ -99,6 +133,8 @@ class NewsSentimentAnalyst:
 
 class DerivativesAnalyst:
     def analyze(self, metrics: dict[str, Any]) -> dict[str, Any]:
+        if not any(key in metrics for key in ("funding_rate", "open_interest", "basis")):
+            return _abstain("derivatives", "no funding, open interest, or basis data supplied")
         funding = float(metrics.get("funding_rate", 0.0) or 0.0)
         oi = float(metrics.get("open_interest", 0.0) or 0.0)
         basis = float(metrics.get("basis", 0.0) or 0.0)
@@ -111,12 +147,17 @@ class DerivativesAnalyst:
         if funding > 0.0005:
             risk_flags.append("extreme_funding")
 
+        # Symmetric: positioning confirms a direction only when basis and funding agree.
         if basis > 0 and oi > 0 and funding > 0.0005:
             signal = "HOLD"
         elif crowding_score > 0.8:
             signal = "NEUTRAL"
-        else:
+        elif basis > 0 and funding >= 0:
             signal = "BUY"
+        elif basis < 0 and funding <= 0:
+            signal = "SELL"
+        else:
+            signal = "NEUTRAL"
 
         return {
             "agent": "derivatives",
@@ -134,6 +175,8 @@ class DerivativesAnalyst:
 
 class MacroAnalyst:
     def analyze(self, data: dict[str, Any]) -> dict[str, Any]:
+        if "dxy" not in data and "fed_message" not in data:
+            return _abstain("macro", "no DXY or Fed data supplied")
         horizon_hours = int(data.get("horizon_hours", 24) or 24)
         dxy = float(data.get("dxy", 100.0) or 100.0)
         fed_message = str(data.get("fed_message", "neutral")).lower()
@@ -144,9 +187,12 @@ class MacroAnalyst:
         elif dxy > 105 and "hawkish" in fed_message:
             signal = "SELL"
             regime = "risk-off macro"
-        else:
+        elif dxy < 100 and "dovish" in fed_message:
             signal = "BUY"
             regime = "risk-on macro"
+        else:
+            signal = "NEUTRAL"
+            regime = "mixed macro"
 
         return {
             "agent": "macro",
@@ -161,6 +207,8 @@ class MacroAnalyst:
 
 class FundamentalsAnalyst:
     def analyze(self, data: dict[str, Any]) -> dict[str, Any]:
+        if "earnings_growth" not in data and "revenue_growth" not in data:
+            return _abstain("fundamentals", "no earnings or revenue data supplied")
         earnings_growth = float(data.get("earnings_growth", 0.0) or 0.0)
         revenue_growth = float(data.get("revenue_growth", 0.0) or 0.0)
         pe_relative = float(data.get("pe_relative_to_sector", 1.0) or 1.0)

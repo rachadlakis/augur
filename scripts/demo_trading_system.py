@@ -291,19 +291,20 @@ def demo_paper_trading_backtest():
     print(f"  Profit factor: {metrics['profit_factor']:.2f}")
     print(f"  Total P&L: ${metrics['total_pnl']:.2f}")
     print(f"  Return %: {metrics['total_return_pct']:.2f}%")
-    print(f"  Max drawdown: ${metrics['max_drawdown']:.2f}")
+    print(f"  Max drawdown: {metrics['max_drawdown']:.2f}% (${metrics['max_drawdown_usd']:.2f})")
     print(f"  Sharpe ratio: {metrics['sharpe']:.4f}")
 
     # Compare to baseline (buy-and-hold)
     baseline = BaselineComparison.buy_and_hold(50000.0, 51500.0, 0.5)
     baseline_return = (baseline["return_pct"] / 100) * 100000 / 100000 * 100
 
-    comparison = BaselineComparison.compare(metrics, baseline_return, 3000.0)
+    # Baseline drawdown as a percent of peak equity, matching get_metrics(): $3,000 on $100,000.
+    comparison = BaselineComparison.compare(metrics, baseline_return, 3.0)
     print(f"\nVs Buy-and-Hold Baseline:")
     print(f"  System return: {comparison['system_return_pct']:.2f}%")
     print(f"  Baseline return: {comparison['baseline_return_pct']:.2f}%")
     print(f"  Outperformance: {comparison['outperformance']:.2f}%")
-    print(f"  Drawdown improvement: ${comparison['drawdown_improvement']:.2f}")
+    print(f"  Drawdown improvement: {comparison['drawdown_improvement']:.2f} pts")
 
 
 def main():

@@ -2,7 +2,9 @@
 
 from .asset_config import AssetClass, AssetConfig
 from .backtest import BaselineComparison, PaperTradingBacktester
+from .calibration import SpecialistCalibrator
 from .execution import ExecutionPlanner
+from .guard import TradingGuard
 from .journal import TradeJournal
 from .monitor import PositionMonitor
 from .orchestrator import OrchestratorConsensus
@@ -17,5 +19,7 @@ __all__ = [
     "PaperTradingBacktester",
     "PositionMonitor",
     "RiskManager",
+    "SpecialistCalibrator",
     "TradeJournal",
+    "TradingGuard",
 ]

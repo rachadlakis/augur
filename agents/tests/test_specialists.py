@@ -137,7 +137,8 @@ def test_trading_pipeline_synthesizes_safe_decision(bullish_snapshot):
         spread=0.0008,
         expected_slippage=0.001,
         liquidity=0.82,
-        size=1000.0,
+        exposure=0.0,
+        daily_loss_used=0.0,
     )
     assert result["decision"] in {"BUY", "HOLD", "NO_TRADE"}
     assert "risk" in result["risk_summary"].lower() or result["execution"]["allowed"] is True

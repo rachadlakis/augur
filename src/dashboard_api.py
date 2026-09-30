@@ -812,15 +812,20 @@ async def monitor_positions():
                 positions_to_close = []
                 
                 for symbol, pos in trading_state.positions.items():
-                    # Check stop loss
-                    if pos['stop_price'] and pos['side'] == 'BUY':
-                        if pos['current_price'] <= pos['stop_price']:
-                            positions_to_close.append((symbol, pos['current_price'], "hit_stop"))
-                    
+                    is_long = pos['side'] == 'BUY'
+                    price = pos['current_price']
+
+                    # Check stop loss (below entry for longs, above for shorts)
+                    if pos['stop_price']:
+                        if (is_long and price <= pos['stop_price']) or (not is_long and price >= pos['stop_price']):
+                            positions_to_close.append((symbol, price, "hit_stop"))
+                            continue
+
                     # Check target
-                    if pos['target_price'] and pos['side'] == 'BUY':
-                        if pos['current_price'] >= pos['target_price']:
-                            positions_to_close.append((symbol, pos['current_price'], "hit_target"))
+                    if pos['target_price']:
+                        if (is_long and price >= pos['target_price']) or (not is_long and price <= pos['target_price']):
+                            positions_to_close.append((symbol, price, "hit_target"))
+                            continue
                     
                     # Check thesis validity (random for demo, replace with real logic)
                     if not pos['thesis_valid']:

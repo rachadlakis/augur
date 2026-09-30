@@ -18,11 +18,25 @@ class PositionMonitor:
         news_impact: str = "low",
         thesis_valid: bool = True,
     ) -> dict[str, Any]:
-        entry = float(trade.get("entry", 0.0) or 0.0)
         stop = float(trade.get("stop", 0.0) or 0.0)
         target = float(trade.get("target", 0.0) or 0.0)
+        side = str(trade.get("side", "")).upper()
 
-        if current_price <= stop and trade.get("side") == "LONG":
+        if side in {"LONG", "BUY"}:
+            hit_stop = stop > 0 and current_price <= stop
+            hit_target = target > 0 and current_price >= target
+        elif side in {"SHORT", "SELL"}:
+            hit_stop = stop > 0 and current_price >= stop
+            hit_target = target > 0 and current_price <= target
+        else:
+            return {
+                "status": "REVIEW",
+                "reason": f"unknown position side {trade.get('side')!r}; stops cannot be evaluated",
+                "action": "monitor",
+                "price": current_price,
+            }
+
+        if hit_stop:
             return {
                 "status": "HIT_STOP",
                 "reason": "price reached the pre-set stop level",
@@ -30,7 +44,7 @@ class PositionMonitor:
                 "price": current_price,
             }
 
-        if current_price >= target and trade.get("side") == "LONG":
+        if hit_target:
             return {
                 "status": "HIT_TARGET",
                 "reason": "price met the pre-defined target",
