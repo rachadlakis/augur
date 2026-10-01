@@ -259,6 +259,20 @@ SESSION_DB_URL = os.getenv("SESSION_DB_URL", f"sqlite+aiosqlite:///{_DEFAULT_DB_
 
 
 ## =============================================================================
+# Tool guard (tool_guard.py)
+#
+# Limits checked in before_tool_callback, ahead of every tool call. A turn is one
+# ADK invocation: one incoming message and everything the agent does to answer
+# it. The repeat limit leaves room for the "poll two or three times to confirm
+# the job started" the training agent is allowed.
+## =============================================================================
+
+TOOL_GUARD_MAX_CALLS_PER_TURN = int(os.getenv("TOOL_GUARD_MAX_CALLS_PER_TURN", "40"))
+TOOL_GUARD_MAX_REPEAT_CALLS = int(os.getenv("TOOL_GUARD_MAX_REPEAT_CALLS", "5"))
+TOOL_GUARD_MAX_ARG_BYTES = int(os.getenv("TOOL_GUARD_MAX_ARG_BYTES", "65536"))
+
+
+## =============================================================================
 # Stub tool behaviour
 #
 # There are no MCP tool servers and no GPUs behind these agents yet; the tools

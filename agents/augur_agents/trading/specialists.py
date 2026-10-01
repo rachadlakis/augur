@@ -158,6 +158,8 @@ class NewsSentimentAnalyst:
 
     CREDIBLE_SOURCES = {"official", "exchange", "central_bank", "newswire"}
     IMPACT_LEVELS = {"HIGH_IMPACT", "MEDIUM_IMPACT", "LOW_IMPACT"}
+    # Share of low-credibility sentiment pointing one way that marks a flood.
+    ONE_SIDED_SHARE = 0.8
 
     def __init__(self, *, max_age_hours: float = 24.0) -> None:
         self.max_age_hours = max_age_hours
@@ -167,10 +169,13 @@ class NewsSentimentAnalyst:
         seen: set[str] = set()
         clean: list[dict[str, Any]] = []
         for event in events:
+            raw_sentiment = event.get("sentiment")
+            if raw_sentiment is None:
+                continue  # no score: nothing to trust
             try:
-                sentiment = float(event.get("sentiment"))
+                sentiment = float(raw_sentiment)
             except (TypeError, ValueError):
-                continue  # no numeric score: nothing to trust
+                continue  # not numeric: nothing to trust
             if math.isnan(sentiment):
                 continue
             published = event.get("published")
@@ -210,8 +215,11 @@ class NewsSentimentAnalyst:
         manipulation_flags: list[str] = []
         low_cred = [e for e in events if e["source"] not in self.CREDIBLE_SOURCES]
         if len(events) >= 3 and len(low_cred) / len(events) >= 0.7:
-            signs = {1 if e["sentiment"] > 0 else -1 if e["sentiment"] < 0 else 0 for e in low_cred}
-            if len(signs - {0}) == 1:
+            # One-sided by sentiment mass, not by "every item agrees": a flood
+            # with a few faintly dissenting decoys is still a flood.
+            bullish = sum(e["sentiment"] for e in low_cred if e["sentiment"] > 0)
+            bearish = -sum(e["sentiment"] for e in low_cred if e["sentiment"] < 0)
+            if bullish + bearish > 0 and max(bullish, bearish) / (bullish + bearish) >= self.ONE_SIDED_SHARE:
                 manipulation_flags.append("one_sided_low_credibility_feed")
 
         signal = "BUY" if weighted > 0 else "SELL" if weighted < 0 else "NEUTRAL"

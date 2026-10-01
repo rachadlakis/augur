@@ -12,6 +12,10 @@ Scope is deliberately narrow - observability only:
 Callbacks here never raise - a logging bug must not fail a request - and they
 never rewrite a model or tool result.
 
+Security checks live in ``tool_guard`` and are added to ``AGENT_CALLBACKS``
+below. The guard refuses a tool call *before* it runs. It never alters a result
+that a tool returned.
+
 Deliberately NOT added: content filtering or response rewriting. Those suit a
 public chatbot; this is an internal control plane where silently altering a tool
 result would undermine the audit trail.
@@ -24,6 +28,8 @@ import time
 from typing import Any, Optional
 
 from google.adk.tools.base_tool import BaseTool
+
+from augur_agents.tool_guard import guard_after_tool, guard_before_tool
 
 logger = logging.getLogger("augur.agents")
 
@@ -101,10 +107,13 @@ def log_after_model(callback_context: Any, llm_response: Any) -> None:
 
 
 # Spread into every LlmAgent(...): the before_*/after_* hooks accept a list, and
-# list order is execution order.
+# list order is execution order. ADK stops at the first callback that returns a
+# response, so the logger goes before the guard and every attempt is logged,
+# including refused ones. A refused call still reaches the after_tool callbacks,
+# so it is logged as FAILED with the guard's reason.
 AGENT_CALLBACKS: dict[str, Any] = {
-    "before_tool_callback": [log_before_tool],
-    "after_tool_callback": [log_after_tool],
+    "before_tool_callback": [log_before_tool, guard_before_tool],
+    "after_tool_callback": [log_after_tool, guard_after_tool],
     "after_model_callback": [log_after_model],
 }
 
