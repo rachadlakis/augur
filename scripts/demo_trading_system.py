@@ -21,27 +21,24 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "agents"))
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
+from datetime import datetime, timezone
+
 from augur_agents.contracts import MarketSnapshot  # noqa: E402
 from augur_agents.trading import (
     AssetConfig,
     BaselineComparison,
-    ExecutionPlanner,
     OrchestratorConsensus,
     PaperTradingBacktester,
     PositionMonitor,
     RiskManager,
     TradeJournal,
 )
-from augur_agents.trading.pipeline import TradingPipeline
 from augur_agents.trading.specialists import (
-    DerivativesAnalyst,
     FundamentalsAnalyst,
     MacroAnalyst,
     NewsSentimentAnalyst,
-    OnChainAnalyst,
     TechnicalAnalyst,
 )
-from datetime import datetime, timezone
 
 
 def demo_asset_class_awareness():
@@ -293,7 +290,7 @@ def demo_paper_trading_backtest():
 
     metrics = backtest.get_metrics()
 
-    print(f"\nSystem Performance (10 trades):")
+    print("\nSystem Performance (10 trades):")
     print(f"  Win rate: {metrics['win_rate']}%")
     print(f"  Avg win: ${metrics['avg_win']:.2f}")
     print(f"  Avg loss: ${metrics['avg_loss']:.2f}")
@@ -309,7 +306,7 @@ def demo_paper_trading_backtest():
 
     # Baseline drawdown as a percent of peak equity, matching get_metrics(): $3,000 on $100,000.
     comparison = BaselineComparison.compare(metrics, baseline_return, 3.0)
-    print(f"\nVs Buy-and-Hold Baseline:")
+    print("\nVs Buy-and-Hold Baseline:")
     print(f"  System return: {comparison['system_return_pct']:.2f}%")
     print(f"  Baseline return: {comparison['baseline_return_pct']:.2f}%")
     print(f"  Outperformance: {comparison['outperformance']:.2f}%")

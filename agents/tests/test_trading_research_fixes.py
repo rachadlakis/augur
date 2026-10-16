@@ -9,7 +9,11 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from augur_agents.contracts import MarketSnapshot
-from augur_agents.trading.backtest import BaselineComparison, PaperTradingBacktester, simulate_bracket_exit
+from augur_agents.trading.backtest import (
+    BaselineComparison,
+    PaperTradingBacktester,
+    simulate_bracket_exit,
+)
 from augur_agents.trading.calibration import SpecialistCalibrator, isotonic_fit
 from augur_agents.trading.evaluation import (
     alpha_beta,
@@ -471,7 +475,11 @@ def test_bracket_exit_is_conservative():
 # --- Round 3: commodities (gold, silver, oil) --------------------------------------------
 
 from augur_agents.trading.asset_config import AssetConfig  # noqa: E402
-from augur_agents.trading.markets import BY_SYMBOL, average_true_range, snapshot_from_bars  # noqa: E402
+from augur_agents.trading.markets import (  # noqa: E402
+    BY_SYMBOL,
+    average_true_range,
+    snapshot_from_bars,
+)
 from augur_agents.trading.specialists import TermStructureAnalyst  # noqa: E402
 
 

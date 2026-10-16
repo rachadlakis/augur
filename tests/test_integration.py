@@ -6,9 +6,10 @@ Tests backend API, WebSocket connection, and trading operations.
 
 import asyncio
 import json
+from datetime import datetime
+
 import aiohttp
 import websockets
-from datetime import datetime
 
 BASE_URL = "http://localhost:8000"
 WS_URL = "ws://localhost:8000/ws/dashboard"
@@ -39,7 +40,7 @@ async def test_portfolio_endpoint():
             async with session.get(f"{BASE_URL}/api/portfolio") as response:
                 if response.status == 200:
                     data = await response.json()
-                    print(f"✅ Portfolio endpoint working")
+                    print("✅ Portfolio endpoint working")
                     print(f"   Account Equity: ${data['account_equity']:,.2f}")
                     print(f"   Total P&L: ${data['total_pnl']:,.2f}")
                     print(f"   Positions: {len(data['positions'])}")
@@ -61,7 +62,7 @@ async def test_positions_endpoint():
             async with session.get(f"{BASE_URL}/api/positions") as response:
                 if response.status == 200:
                     data = await response.json()
-                    print(f"✅ Positions endpoint working")
+                    print("✅ Positions endpoint working")
                     print(f"   Total positions: {len(data)}")
                     for pos in data:
                         print(f"   - {pos['symbol']}: {pos['quantity']} @ ${pos['current_price']:.2f}")

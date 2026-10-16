@@ -15,6 +15,9 @@ DEFAULT_RPC_URL = "https://ethereum-rpc.publicnode.com"
 _ADDRESS = re.compile(r"^0x[0-9a-fA-F]{40}$")
 _PRIVATE_KEY = re.compile(r"^(0x)?[0-9a-fA-F]{64}$")
 WEI_PER_ETH = 10**18
+# Public RPC gateways (publicnode included) answer Python's default urllib
+# User-Agent with 403 Forbidden, so every request names itself.
+RPC_HEADERS = {"Content-Type": "application/json", "User-Agent": "augur-dashboard/1.0"}
 
 
 def validate_address(address: str) -> str:
@@ -31,7 +34,7 @@ def validate_address(address: str) -> str:
 def eth_balance(address: str, rpc_url: str = DEFAULT_RPC_URL, opener=urllib.request.urlopen) -> float:
     """ETH held by `address`, from the latest block."""
     body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "eth_getBalance", "params": [validate_address(address), "latest"]})
-    request = urllib.request.Request(rpc_url, data=body.encode(), headers={"Content-Type": "application/json"})
+    request = urllib.request.Request(rpc_url, data=body.encode(), headers=RPC_HEADERS)
     try:
         with opener(request, timeout=10) as response:
             payload = json.load(response)

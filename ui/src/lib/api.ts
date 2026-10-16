@@ -173,6 +173,81 @@ export interface WalletsResponse {
   eth_price: number | null
 }
 
+export interface ThemeTone {
+  tone: number
+  baseline: number
+  shift: number
+}
+
+export interface FedRelease {
+  title: string
+  published: string
+  hours_ago: number
+}
+
+export interface NewsContext {
+  as_of: string
+  themes: Record<string, ThemeTone>
+  epu?: { latest: number; week_mean: number; percentile_1y: number }
+  fomc_hours_ago?: number | null
+  fed_releases?: FedRelease[]
+  errors: Record<string, string>
+}
+
+export interface WhaleTransfer {
+  tx: string | null
+  exchange: string | null
+  usd?: number
+  eth?: number
+  direction?: 'to_exchange' | 'from_exchange'
+  kind?: 'to_exchange' | 'from_exchange' | 'exchange_internal' | 'wallet_to_wallet'
+}
+
+export interface StablecoinFlows {
+  hours: number
+  inflow_usd: number
+  outflow_usd: number
+  netflow_usd: number
+  largest: WhaleTransfer[]
+}
+
+export interface EthFlows {
+  blocks: number
+  min_eth: number
+  inflow_eth: number
+  outflow_eth: number
+  netflow_eth: number
+  largest: WhaleTransfer[]
+}
+
+export interface WhaleFlows {
+  exchanges_tracked: number
+  stablecoins?: StablecoinFlows
+  eth?: EthFlows
+  errors: Record<string, string>
+}
+
+export interface AnalystReading {
+  agent: string
+  signal: 'BUY' | 'SELL' | 'NEUTRAL' | 'NO_TRADE' | string
+  confidence: number
+  evidence: string[]
+  risk_flags: string[]
+  regime?: string
+  risk_off_score?: number
+  flow_score?: number
+}
+
+export type ReadingKey = 'policy_for_risk_assets' | 'policy_for_gold' | 'whales_for_btc' | 'whales_for_eth'
+
+export interface IntelResponse {
+  news: NewsContext | null
+  whales: WhaleFlows | null
+  refreshed_at: string | null
+  readings: Partial<Record<ReadingKey, AnalystReading>>
+  refresh_seconds: number
+}
+
 export const REAL_MONEY_PHRASE = 'REAL MONEY'
 
 export class ApiError extends Error {
@@ -221,5 +296,6 @@ export const api = {
   integrations: () => request<IntegrationsResponse>('/api/integrations'),
   saveKeys: (id: string, values: Record<string, string>) =>
     post<{ saved: string[]; integration: Integration }>(`/api/integrations/${id}/keys`, { values }),
+  intel: (refresh = false) => request<IntelResponse>(`/api/intel${refresh ? '?refresh=true' : ''}`),
   testIntegration: (id: string) => post<{ ok: boolean; message: string }>(`/api/integrations/${id}/test`),
 }

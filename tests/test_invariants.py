@@ -9,7 +9,6 @@ from __future__ import annotations
 import random
 
 import pytest
-
 from augur_agents.trading.calibration import isotonic_fit
 from augur_agents.trading.evaluation import probabilistic_sharpe_ratio, walk_forward_splits
 from augur_agents.trading.orchestrator import OrchestratorConsensus
@@ -121,3 +120,15 @@ def test_news_sentiment_always_clamped_and_text_free():
             assert set(event) == {"source", "sentiment", "impact"}
         result = analyst.analyze(events)
         assert 0.0 <= result["confidence"] <= 0.9
+
+
+def test_risk_refuses_non_finite_inputs():
+    """NaN fails every comparison, so without an explicit check it passes every limit."""
+    risk = RiskManager()
+    base = dict(decision="BUY", market_snapshot=None, entry=100.0, stop=98.0, target=104.0, account_equity=100_000.0,
+                exposure=0.0, spread=0.0005, liquidity=0.9, daily_loss_used=0.0)
+    assert risk.evaluate(**base)["allowed"]
+    for field in ("entry", "stop", "target", "account_equity", "exposure", "daily_loss_used", "spread", "liquidity"):
+        for bad in (float("nan"), float("inf")):
+            result = risk.evaluate(**{**base, field: bad})
+            assert not result["allowed"] and result["position_qty"] == 0.0, (field, bad)

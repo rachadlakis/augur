@@ -7,14 +7,19 @@ import importlib.util
 import io
 import json
 import sys
-import types
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
 from providers import wallets
-from providers.base import AccountSnapshot, DataUnavailable, OrderResult, OrderSide, PositionSnapshot
+from providers.base import (
+    AccountSnapshot,
+    DataUnavailable,
+    OrderResult,
+    OrderSide,
+    PositionSnapshot,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 

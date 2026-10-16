@@ -18,32 +18,37 @@ for _path in (_ROOT, _ROOT / "agents", _ROOT / "src"):
     if str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import Optional, List, Dict, Any
 import asyncio
 import json
+import logging
 import math
 import random
-from urllib.parse import urlparse
-from collections import deque
-from datetime import datetime
-import logging
 import re
+from collections import deque
+from contextlib import asynccontextmanager
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+from urllib.parse import urlparse
+
+from augur_agents.trading.journal import TradeJournal
+from augur_agents.trading.markets import UNIVERSE, snapshot_from_bars
+from augur_agents.trading.monitor import PositionMonitor
 
 # Trading system imports
 from augur_agents.trading.pipeline import TradingPipeline
-from augur_agents.trading.journal import TradeJournal
-from augur_agents.trading.monitor import PositionMonitor
+from augur_agents.trading.specialists import PolicyRiskAnalyst, WhaleFlowAnalyst
+from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
+import integrations
 from config import Settings, load_settings
-from augur_agents.trading.markets import UNIVERSE, snapshot_from_bars
-from providers import fred, wallets
+from providers import fred, wallets, whales
+from providers import news as news_feeds
 from providers.base import DataUnavailable, OrderSide
 from providers.market_data import AlpacaMarketData
 from providers.stocks_alpaca import AlpacaProvider
-from technical_indicators import TechnicalIndicators, SignalDetector
-import integrations
+from technical_indicators import SignalDetector, TechnicalIndicators
 
 logger = logging.getLogger(__name__)
 
@@ -326,6 +331,11 @@ class TradingState:
             for pos in self.positions.values()
         )
 
+    def gross_position_value(self) -> float:
+        """Long plus short market value: what exposure limits are measured against.
+        Shorts must not offset longs here, or a hedged-looking book could double its risk."""
+        return sum(abs(pos['quantity'] * pos['current_price']) for pos in self.positions.values())
+
     def cash(self) -> float:
         return self.account_equity - self.net_position_value()
 
@@ -341,27 +351,30 @@ class TradingState:
         self.account_equity = new_equity
 
     async def close_position(self, symbol: str, exit_price: float, reason: str = "manual_close") -> Dict[str, Any]:
-        """Close a position"""
-        async with self.lock:
-            return self._close_position_locked(symbol, exit_price, reason)
+        """Close a position: at the broker first when live, then in the local book.
 
-    def _close_position_locked(
-        self, symbol: str, exit_price: float, reason: str, *, send_to_broker: bool = True
-    ) -> Dict[str, Any]:
-        """Close a position. Caller must hold the lock (asyncio.Lock is not reentrant)."""
+        The broker call runs in a worker thread without holding the lock, so a
+        slow broker never freezes the event loop (prices, WebSockets, other closes).
+        """
         if symbol not in self.positions:
             return {"success": False, "error": f"No position for {symbol}"}
-
-        pos = self.positions[symbol]
-
-        # Live positions close at the broker first; local state only follows a real close.
-        if send_to_broker and not self.demo_mode and self.alpaca is not None:
-            result = self.alpaca.close_position(symbol)
+        if not self.demo_mode and self.alpaca is not None:
+            result = await asyncio.to_thread(self.alpaca.close_position, symbol)
             if result.status == "REJECTED":
                 logger.error(f"Broker rejected close for {symbol}: {result.raw_error}")
                 return {"success": False, "error": f"Broker rejected close: {result.raw_error}"}
             if result.avg_fill_price:
                 exit_price = result.avg_fill_price
+        async with self.lock:
+            return self._close_position_locked(symbol, exit_price, reason)
+
+    def _close_position_locked(self, symbol: str, exit_price: float, reason: str) -> Dict[str, Any]:
+        """Record a close in the local book. Caller must hold the lock (asyncio.Lock
+        is not reentrant) and must already have closed it at the broker when live."""
+        if symbol not in self.positions:
+            return {"success": False, "error": f"No position for {symbol}"}
+
+        pos = self.positions[symbol]
 
         # Record in journal
         trade_record = {
@@ -407,14 +420,21 @@ class TradingState:
     async def kill_switch(self, reason: str) -> Dict[str, Any]:
         """Halt new entries and flatten everything, at the broker when live."""
         self.pipeline.guard.halt(reason)
+        broker_results: List[str] = []
+        if not self.demo_mode and self.alpaca is not None:
+            results = await asyncio.to_thread(self.alpaca.close_all_positions)
+            broker_results = [r.status for r in results]
+            failed = [str(r.raw_error) for r in results if r.status == "REJECTED"]
+            if failed:
+                # Positions are still open at the broker: don't book exits that didn't happen.
+                logger.critical(f"Kill switch: broker flatten FAILED: {failed}")
+                return {"halted": True, "reason": reason, "closed": 0, "broker_results": broker_results,
+                        "error": f"Broker refused to flatten: {'; '.join(failed)}"}
         async with self.lock:
-            broker_results = []
-            if not self.demo_mode and self.alpaca is not None:
-                broker_results = [r.status for r in self.alpaca.close_all_positions()]
             # One broker-wide flatten above; the local closes only record it.
             closed = [
                 self._close_position_locked(
-                    symbol, pos['current_price'], f"kill_switch: {reason}", send_to_broker=False
+                    symbol, pos['current_price'], f"kill_switch: {reason}"
                 )
                 for symbol, pos in list(self.positions.items())
             ]
@@ -572,7 +592,7 @@ class TradingState:
             for symbol in vanished:
                 if symbol in self.positions:
                     price = exit_fills.get(symbol) or self.positions[symbol]['current_price']
-                    self._close_position_locked(symbol, price, "closed_at_broker", send_to_broker=False)
+                    self._close_position_locked(symbol, price, "closed_at_broker")
                     self.order_plans.pop(symbol, None)
             for symbol, p in broker.items():
                 if not p.avg_entry_price or not p.current_price:
@@ -651,12 +671,20 @@ async def websocket_dashboard(websocket: WebSocket):
         while True:
             # Receive commands from client (chat, manual actions, etc.)
             data = await websocket.receive_text()
-            message = json.loads(data)
-            
-            if message["type"] == "command":
-                await handle_command(websocket, message["data"])
-            elif message["type"] == "action":
-                await handle_action(websocket, message["data"])
+            try:
+                message = json.loads(data)
+                kind, payload = message["type"], message.get("data") or {}
+                if not isinstance(payload, dict):
+                    raise TypeError("data must be an object")
+            except (ValueError, KeyError, TypeError, AttributeError) as e:
+                # One bad message is answered; it doesn't drop the connection.
+                await websocket.send_json({"type": "error", "error": f"Malformed message: {e}"})
+                continue
+
+            if kind == "command":
+                await handle_command(websocket, payload)
+            elif kind == "action":
+                await handle_action(websocket, payload)
             
             # Broadcast current portfolio state
             portfolio = await get_portfolio_snapshot()
@@ -699,10 +727,10 @@ async def get_positions():
 
 
 @app.get("/api/trades", response_model=List[Trade])
-async def get_trades(limit: int = 50):
-    """Get recent trade history"""
-    portfolio = await get_portfolio_snapshot()
-    return portfolio.recent_trades[-limit:]
+async def get_trades(limit: int = Query(50, ge=1, le=1000)):
+    """Get recent trade history, newest last"""
+    async with trading_state.lock:
+        return [Trade(**t) for t in trading_state.trades[-limit:]]
 
 
 @app.get("/api/indicators")
@@ -810,11 +838,16 @@ async def save_integration_keys(integration_id: str, body: IntegrationKeys):
     integrations.write_env(cleaned)
     trading_state.settings = load_settings()
     if integration_id == "alpaca":
+        # Connect now rather than after a restart: real prices, then the broker book.
         try:
             trading_state.alpaca = AlpacaProvider(trading_state.settings)
+            trading_state.market_data = AlpacaMarketData(trading_state.settings)
         except Exception as e:
             trading_state.alpaca = None
             logger.warning(f"Alpaca keys saved but client could not start: {e}")
+        else:
+            if not await trading_state.load_alpaca_positions():
+                logger.warning("Alpaca keys saved but the account could not be read yet")
     return {"saved": sorted(cleaned), "integration": next(
         row for row in integrations.status(trading_state.settings) if row["id"] == integration_id
     )}
@@ -852,6 +885,10 @@ async def test_integration(integration_id: str):
     return {"ok": True, "message": f"{integration.name} key is saved. It will be used when that data feed is switched on."}
 
 
+def _integration_configured(integration_id: str) -> bool:
+    return any(row["id"] == integration_id and row["configured"] for row in integrations.status(trading_state.settings))
+
+
 _scan_cache: Dict[str, Any] = {"at": None, "result": None}
 SCAN_TTL_SECONDS = 60
 
@@ -864,7 +901,10 @@ def _today_loss_fraction() -> float:
     return max(0.0, -realized_today) / equity
 
 
-def scan_instrument(instrument: Any, data: Any, real_yield_bps: Optional[float]) -> Dict[str, Any]:
+def scan_instrument(
+    instrument: Any, data: Any, real_yield_bps: Optional[float],
+    policy_context: Optional[Dict[str, Any]] = None, whale_flows: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     """Run one instrument through a fresh pipeline. Read-only: no order is ever sent."""
     row: Dict[str, Any] = {
         "symbol": instrument.symbol, "name": instrument.name, "asset_class": instrument.asset_class,
@@ -888,10 +928,11 @@ def scan_instrument(instrument: Any, data: Any, real_yield_bps: Optional[float])
     # A fresh pipeline per instrument: a scan must not consume the live rate limits.
     result = TradingPipeline().evaluate(
         market_snapshot=snapshot, account_equity=equity, exposure=exposure,
-        portfolio_exposure=trading_state.net_position_value() / equity,
+        portfolio_exposure=trading_state.gross_position_value() / equity,
         daily_loss_used=_today_loss_fraction(), spread=snapshot.spread, expected_slippage=0.0005,
         liquidity=snapshot.liquidity, asset_class=instrument.asset_class,
         macro_metrics=macro, term_structure=term,
+        policy_context=policy_context, whale_flows=whale_flows,
     )
     technical = result["specialists"]["technical"]
     prior_close = daily[-2]["close"] if len(daily) > 1 else daily[-1]["open"]
@@ -926,7 +967,7 @@ async def scan_markets(refresh: bool = False):
     if not refresh and cached_at and (now - cached_at).total_seconds() < SCAN_TTL_SECONDS:
         return _scan_cache["result"]
 
-    if not integrations.status(trading_state.settings)[0]["configured"]:
+    if not _integration_configured("alpaca"):
         raise HTTPException(status_code=409, detail="Connect Alpaca on the Integrations page to scan markets")
 
     data = AlpacaMarketData(trading_state.settings)
@@ -938,8 +979,10 @@ async def scan_markets(refresh: bool = False):
         except DataUnavailable as e:
             logger.warning(f"Real-yield data unavailable: {e}")
 
+    # News and whale flows come from the background intel loop; a scan never waits on them.
     rows = await asyncio.gather(*[
-        asyncio.to_thread(scan_instrument, instrument, data, real_yield_bps) for instrument in UNIVERSE
+        asyncio.to_thread(scan_instrument, instrument, data, real_yield_bps, _intel["news"], _intel["whales"])
+        for instrument in UNIVERSE
     ])
     result = {
         "scanned_at": now.isoformat(),
@@ -948,6 +991,64 @@ async def scan_markets(refresh: bool = False):
     }
     _scan_cache.update(at=now, result=result)
     return result
+
+
+# ============================================================================
+# Intel: politics/economics news and whale flows
+# ============================================================================
+
+INTEL_REFRESH_SECONDS = 15 * 60
+_intel: Dict[str, Any] = {"news": None, "whales": None, "refreshed_at": None}
+_intel_lock = asyncio.Lock()
+
+
+async def refresh_intel() -> None:
+    """Fetch news context and whale flows side by side. Each source fails on its own."""
+    async with _intel_lock:
+        settings = trading_state.settings
+        news_ctx, whale_flows = await asyncio.gather(
+            asyncio.to_thread(news_feeds.macro_news_context, settings.fred_api_key.get_secret_value()),
+            asyncio.to_thread(
+                whales.whale_flow_snapshot,
+                rpc_url=settings.wallet_rpc_url or wallets.DEFAULT_RPC_URL, extra_exchanges=settings.exchange_wallets,
+            ),
+        )
+        _intel.update(news=news_ctx, whales=whale_flows, refreshed_at=datetime.now().isoformat())
+
+
+def intel_view() -> Dict[str, Any]:
+    """Raw readings plus what the analysts make of them, for the dashboard."""
+    news_ctx, whale_flows = _intel["news"], _intel["whales"]
+    readings: Dict[str, Any] = {}
+    if news_ctx is not None:
+        readings["policy_for_risk_assets"] = PolicyRiskAnalyst().analyze(news_ctx)
+        readings["policy_for_gold"] = PolicyRiskAnalyst().analyze(news_ctx, safe_haven=True)
+    if whale_flows is not None:
+        readings["whales_for_btc"] = WhaleFlowAnalyst().analyze(whale_flows, asset="BTC/USD")
+        readings["whales_for_eth"] = WhaleFlowAnalyst().analyze(whale_flows, asset="ETH/USD")
+    return {**_intel, "readings": readings, "refresh_seconds": INTEL_REFRESH_SECONDS}
+
+
+@app.get("/api/intel")
+async def get_intel(refresh: bool = False):
+    """Politics/economics news context and whale exchange flows (refreshed every 15 minutes)."""
+    if _intel_lock.locked():
+        # A refresh is already running (startup or the 15-minute loop): wait for
+        # it instead of queuing a second one straight after.
+        async with _intel_lock:
+            pass
+    elif refresh or _intel["refreshed_at"] is None:
+        await refresh_intel()
+    return intel_view()
+
+
+async def intel_loop():
+    while True:
+        try:
+            await refresh_intel()
+        except Exception as e:
+            logger.warning(f"Intel refresh failed: {e}")
+        await asyncio.sleep(INTEL_REFRESH_SECONDS)
 
 
 REAL_MONEY_PHRASE = "REAL MONEY"
@@ -971,7 +1072,7 @@ async def submit_order(ticket: OrderTicket):
     kill switch and rate limits apply. Live accounts also need the typed phrase.
     """
     from augur_agents.trading.markets import BY_SYMBOL
-    from augur_agents.trading.risk import RiskManager
+
     from providers.base import OrderRequest, OrderType
 
     instrument = BY_SYMBOL.get(ticket.symbol)
@@ -1005,7 +1106,7 @@ async def submit_order(ticket: OrderTicket):
         decision=side, market_snapshot=None, entry=price, stop=ticket.stop_loss, target=ticket.take_profit,
         account_equity=equity,
         exposure=(position['quantity'] * position['current_price'] / equity) if position else 0.0,
-        portfolio_exposure=abs(trading_state.net_position_value()) / equity,
+        portfolio_exposure=trading_state.gross_position_value() / equity,
         daily_loss_used=_today_loss_fraction(), spread=0.0005, liquidity=0.9,
     )
     if not risk["allowed"]:
@@ -1148,7 +1249,7 @@ async def adjust_position_size(symbol: str, new_qty: Any) -> Dict[str, Any]:
             raise HTTPException(status_code=404, detail=f"No position for {symbol}")
         if new_qty > pos['quantity']:
             cap = trading_state.pipeline.risk.max_asset_exposure
-            exposure = new_qty * pos['current_price'] / trading_state.account_equity
+            exposure = new_qty * pos['current_price'] / max(trading_state.account_equity, 1.0)
             if exposure > cap:
                 raise HTTPException(
                     status_code=400,
@@ -1387,19 +1488,33 @@ def find_exits(positions: Dict[str, Dict[str, Any]]) -> List[tuple]:
     return exits
 
 
+EXIT_RETRY_SECONDS = 30.0
+
+
 async def monitor_positions():
     """Background task to monitor positions and check for exit conditions"""
+    retry_after: Dict[str, float] = {}  # symbol -> loop time; a refused exit is retried, not spammed
+    loop = asyncio.get_running_loop()
     while True:
         try:
             await asyncio.sleep(1)  # Check every second
 
-            # Decide and close under one hold of the lock. Calling the public
-            # close_position() here would re-acquire it and deadlock the app.
+            # Decide under the lock, then close without it: close_position() takes
+            # the lock itself (asyncio.Lock is not reentrant) and calls the broker
+            # off the event loop.
             async with trading_state.lock:
-                results = [
-                    (symbol, exit_price, reason, trading_state._close_position_locked(symbol, exit_price, reason))
-                    for symbol, exit_price, reason in find_exits(trading_state.positions)
-                ]
+                exits = [e for e in find_exits(trading_state.positions) if retry_after.get(e[0], 0.0) <= loop.time()]
+
+            results = []
+            for symbol, exit_price, reason in exits:
+                result = await trading_state.close_position(symbol, exit_price, reason)
+                if result["success"]:
+                    retry_after.pop(symbol, None)
+                elif symbol in trading_state.positions:
+                    retry_after[symbol] = loop.time() + EXIT_RETRY_SECONDS
+                else:
+                    continue  # closed elsewhere in the meantime (manual close, broker sync)
+                results.append((symbol, exit_price, reason, result))
 
             for symbol, exit_price, reason, result in results:
                 if result["success"]:
@@ -1498,18 +1613,20 @@ async def simulate_market_data():
             await asyncio.sleep(2)
 
 
-@app.on_event("startup")
+_background_tasks: List[asyncio.Task] = []
+
+
 async def startup_event():
     """Initialize on app startup"""
     logger.info("Dashboard API starting up...")
-    
-    # Create background tasks
-    asyncio.create_task(monitor_positions())
-    asyncio.create_task(broadcast_portfolio_updates())
-    asyncio.create_task(simulate_market_data())
-    asyncio.create_task(live_price_feed())
-    asyncio.create_task(broker_sync_loop())
-    
+
+    # Keep references: the event loop holds tasks only weakly, so an
+    # unreferenced background loop can be garbage-collected mid-run.
+    _background_tasks.extend(asyncio.create_task(loop()) for loop in (
+        monitor_positions, broadcast_portfolio_updates, simulate_market_data, live_price_feed, broker_sync_loop,
+        intel_loop,
+    ))
+
     logger.info("Background tasks started")
     
     # The broker book (even an empty one) beats demo data whenever Alpaca is connected.
@@ -1530,12 +1647,26 @@ async def startup_event():
             trading_state.positions["TSLA"]['target_price'] = 220.00
 
 
-@app.on_event("shutdown")
 async def shutdown_event():
-    """Cleanup on app shutdown"""
+    """Stop the background loops so the process exits cleanly."""
     logger.info("Dashboard API shutting down...")
-    # TODO: Close data streams
-    # TODO: Save state
+    for task in _background_tasks:
+        task.cancel()
+    await asyncio.gather(*_background_tasks, return_exceptions=True)
+    _background_tasks.clear()
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    await startup_event()
+    try:
+        yield
+    finally:
+        await shutdown_event()
+
+
+# Replaces the deprecated @app.on_event hooks.
+app.router.lifespan_context = lifespan
 
 
 if __name__ == "__main__":

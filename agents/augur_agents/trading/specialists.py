@@ -240,6 +240,145 @@ class NewsSentimentAnalyst:
         }
 
 
+class PolicyRiskAnalyst:
+    """Politics and economics coverage as a risk-on / risk-off lean.
+
+    Reads only numbers produced by Augur's own requests (see providers/news.py):
+    the Economic Policy Uncertainty percentile, the shift in GDELT tone on
+    rates, inflation, trade, conflict and recession coverage, and hours since
+    the last FOMC release. Spikes in policy and geopolitical risk have come
+    with short-lived equity drawdowns (Caldara & Iacoviello; Baker, Bloom &
+    Davis), and gold has tended to benefit. Evidence is modest, so this is a
+    secondary voice that can confirm or veto, plus two risk brakes:
+    `central_bank_event` blocks entries just after an FOMC release and
+    `policy_uncertainty_high` halves the risk budget.
+    """
+
+    FOMC_BLACKOUT_HOURS = 2.0
+    HIGH_UNCERTAINTY_PERCENTILE = 0.90
+    TONE_SHIFT_SCALE = 1.5  # a 1.5-point tone drop across themes is a full-strength reading
+
+    def analyze(self, context: dict[str, Any], *, safe_haven: bool = False) -> dict[str, Any]:
+        epu = context.get("epu") or {}
+        themes = context.get("themes") or {}
+        shifts = [float(t["shift"]) for t in themes.values() if isinstance(t, dict) and _finite(t.get("shift"))]
+        percentile = epu.get("percentile_1y")
+        fomc_hours = context.get("fomc_hours_ago")
+
+        risk_flags: list[str] = []
+        if _finite(fomc_hours) and 0 <= float(fomc_hours) < self.FOMC_BLACKOUT_HOURS:
+            risk_flags.append("central_bank_event")
+        if _finite(percentile) and float(percentile) >= self.HIGH_UNCERTAINTY_PERCENTILE:
+            risk_flags.append("policy_uncertainty_high")
+        if not shifts and not _finite(percentile):
+            out = _abstain("policy_news", "no policy-uncertainty or news-tone data")
+            out["risk_flags"] += risk_flags
+            return out
+
+        # Positive = risk-off. Uncertainty above its yearly median and coverage
+        # turning darker both push the same way.
+        parts = []
+        if _finite(percentile):
+            parts.append(max(-1.0, min(1.0, (float(percentile) - 0.5) * 2)))
+        if shifts:
+            parts.append(max(-1.0, min(1.0, -sum(shifts) / len(shifts) / self.TONE_SHIFT_SCALE)))
+        risk_off = sum(parts) / len(parts)
+
+        if abs(risk_off) < 0.4:
+            signal = "NEUTRAL"
+        elif risk_off > 0:
+            signal = "BUY" if safe_haven else "SELL"
+        else:
+            signal = "SELL" if safe_haven else "BUY"
+        scored = [(name, float(t["shift"])) for name, t in themes.items() if isinstance(t, dict) and _finite(t.get("shift"))]
+        darkest = min(scored, key=lambda kv: kv[1])[0] if scored else None
+        return {
+            "agent": "policy_news",
+            "signal": signal,
+            "confidence": round(min(0.5, abs(risk_off) * 0.5), 4) if signal != "NEUTRAL" else 0.0,
+            "risk_off_score": round(risk_off, 4),
+            "regime": "risk-off" if risk_off >= 0.4 else "risk-on" if risk_off <= -0.4 else "calm",
+            "evidence": [
+                f"policy uncertainty at the {float(percentile):.0%} percentile of the past year" if _finite(percentile)
+                else "policy uncertainty unavailable",
+                f"news tone shifted {sum(shifts) / len(shifts):+.2f} vs. last week; darkest theme: {darkest}" if shifts
+                else "news tone unavailable",
+            ],
+            "risk_flags": risk_flags,
+        }
+
+
+class WhaleFlowAnalyst:
+    """Exchange flows of stablecoins and ETH, read the way the evidence supports.
+
+    USDT arriving at exchanges has preceded BTC/ETH strength; ETH arriving has
+    preceded ETH weakness; outflows carry little information (arXiv:2411.06327,
+    1-6h horizons). A reading needs both size and one-sidedness, and a flow
+    dominated by one transfer is discounted because a single wallet can be an
+    exchange rebalancing rather than a market view. Secondary evidence only.
+    """
+
+    MIN_STABLE_GROSS_USD = 20_000_000
+    MIN_ETH_GROSS = 2_000
+    MIN_IMBALANCE = 0.3
+    MAX_SINGLE_SHARE = 0.6
+
+    @classmethod
+    def _component(cls, inflow: float, outflow: float, largest: float, minimum: float) -> float:
+        gross = inflow + outflow
+        if gross < minimum:
+            return 0.0
+        imbalance = (inflow - outflow) / gross
+        if abs(imbalance) < cls.MIN_IMBALANCE:
+            return 0.0
+        damp = 0.5 if largest / gross > cls.MAX_SINGLE_SHARE else 1.0
+        return imbalance * damp
+
+    def analyze(self, flows: dict[str, Any], *, asset: str) -> dict[str, Any]:
+        base = asset.upper().split("/")[0]
+        if base not in {"BTC", "ETH"}:
+            return _abstain("whale_flows", f"exchange flows are not read for {asset}")
+        stable, eth = flows.get("stablecoins") or {}, flows.get("eth") or {}
+        if not stable and not eth:
+            return _abstain("whale_flows", "no whale-flow data")
+
+        def biggest(reading: dict[str, Any], key: str) -> float:
+            return max((float(t.get(key, 0.0)) for t in reading.get("largest") or []), default=0.0)
+
+        evidence: list[str] = []
+        score = 0.0
+        if stable:
+            s = self._component(float(stable.get("inflow_usd", 0.0)), float(stable.get("outflow_usd", 0.0)),
+                                biggest(stable, "usd"), self.MIN_STABLE_GROSS_USD)
+            score += s  # dollars arriving = buying power
+            evidence.append(f"USDT exchange netflow ${float(stable.get('netflow_usd', 0.0)) / 1e6:+,.1f}M over "
+                            f"{stable.get('hours', 1)}h (lean {s:+.2f})")
+        if eth and base == "ETH":
+            e = self._component(float(eth.get("inflow_eth", 0.0)), float(eth.get("outflow_eth", 0.0)),
+                                biggest(eth, "eth"), self.MIN_ETH_GROSS)
+            score -= e  # ETH arriving = supply to sell
+            evidence.append(f"ETH exchange netflow {float(eth.get('netflow_eth', 0.0)):+,.0f} ETH (lean {-e:+.2f})")
+
+        score = max(-1.0, min(1.0, score))
+        signal = "BUY" if score >= 0.3 else "SELL" if score <= -0.3 else "NEUTRAL"
+        return {
+            "agent": "whale_flows",
+            "signal": signal,
+            "confidence": round(min(0.4, abs(score) * 0.4), 4) if signal != "NEUTRAL" else 0.0,
+            "flow_score": round(score, 4),
+            "time_horizon": "1h-6h",
+            "evidence": evidence,
+            "risk_flags": [],
+        }
+
+
+def _finite(value: Any) -> bool:
+    try:
+        return value is not None and not isinstance(value, bool) and math.isfinite(float(value))
+    except (TypeError, ValueError):
+        return False
+
+
 class DerivativesAnalyst:
     def analyze(self, metrics: dict[str, Any]) -> dict[str, Any]:
         if not any(key in metrics for key in ("funding_rate", "open_interest", "basis")):

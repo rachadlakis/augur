@@ -17,8 +17,10 @@ from .specialists import (
     MacroAnalyst,
     NewsSentimentAnalyst,
     OnChainAnalyst,
+    PolicyRiskAnalyst,
     TechnicalAnalyst,
     TermStructureAnalyst,
+    WhaleFlowAnalyst,
 )
 
 
@@ -63,6 +65,8 @@ class TradingPipeline:
         macro_metrics: dict[str, Any] | None = None,
         fundamentals_data: dict[str, Any] | None = None,
         term_structure: dict[str, Any] | None = None,
+        policy_context: dict[str, Any] | None = None,
+        whale_flows: dict[str, Any] | None = None,
         asset_class: str = "crypto",
         entry: float | None = None,
         stop: float | None = None,
@@ -74,7 +78,10 @@ class TradingPipeline:
     ) -> dict[str, Any]:
         """`exposure`, `portfolio_exposure`, `correlated_exposure` and
         `daily_loss_used` are fractions of equity read from the live account.
-        `stop` and `target` default to ATR multiples around `entry`."""
+        `stop` and `target` default to ATR multiples around `entry`.
+        `policy_context` (providers/news.py) and `whale_flows`
+        (providers/whales.py) are optional secondary evidence: they can confirm,
+        veto, or shrink a trade, never originate one."""
         technical = TechnicalAnalyst(
             stop_atr_multiple=self.risk.stop_atr_multiple,
             target_atr_multiple=self.risk.target_atr_multiple,
@@ -93,6 +100,12 @@ class TradingPipeline:
             specialists["fundamentals"] = FundamentalsAnalyst().analyze(fundamentals_data or {})
         if config.has_term_structure:
             specialists["term_structure"] = TermStructureAnalyst().analyze(term_structure or {})
+        if policy_context is not None:
+            safe_haven = (macro_metrics or {}).get("underlying") == "gold"
+            specialists["policy"] = PolicyRiskAnalyst().analyze(policy_context, safe_haven=safe_haven)
+        if whale_flows is not None and asset_class == "crypto":
+            asset = str(getattr(market_snapshot, "asset", "") or "")
+            specialists["whales"] = WhaleFlowAnalyst().analyze(whale_flows, asset=asset)
 
         outputs = list(specialists.values())
         consensus = self.orchestrator.synthesize(outputs)
@@ -117,6 +130,10 @@ class TradingPipeline:
         stop = stop or 0.0
         target = target or 0.0
 
+        policy_flags = set(specialists.get("policy", {}).get("risk_flags") or [])
+        if decision in {"BUY", "SELL"} and "central_bank_event" in policy_flags:
+            vetoes.append("a Fed (FOMC) release came out in the last 2 hours; waiting for prices to settle")
+
         risk_fraction = None
         win_probability = consensus.get("win_probability")
         if decision in {"BUY", "SELL"} and win_probability is not None and entry > 0 and stop > 0 and stop != entry:
@@ -129,6 +146,10 @@ class TradingPipeline:
 
         if decision in {"BUY", "SELL"}:
             vetoes.extend(self.guard.check(now))
+
+        if "policy_uncertainty_high" in policy_flags:
+            # Uncertainty only ever shrinks a bet; it never enlarges one.
+            risk_fraction = 0.5 * (self.risk.max_risk_per_trade if risk_fraction is None else risk_fraction)
 
         risk_eval = self.risk.evaluate(
             decision=decision,
@@ -180,7 +201,11 @@ class TradingPipeline:
 
         # One plain list of why this is (or isn't) a trade, for people and UIs.
         if decision not in {"BUY", "SELL"}:
-            reasons = [f"specialists did not agree strongly enough (score {consensus['score']:+.2f}, needs ±0.25 and no conflict)"]
+            primary = consensus.get("primary_score", consensus["score"])
+            if abs(consensus["score"]) >= OrchestratorConsensus.THRESHOLD and abs(primary) < OrchestratorConsensus.THRESHOLD:
+                reasons = [f"news alone would have carried this trade (price/macro score {primary:+.2f}, needs ±0.25); news can confirm, never decide"]
+            else:
+                reasons = [f"specialists did not agree strongly enough (score {consensus['score']:+.2f}, needs ±0.25 and no conflict)"]
         else:
             reasons = vetoes + [r for r in risk_eval["reasons"]] + [r for r in execution["reasons"] if r not in risk_eval["reasons"]]
             reasons = list(dict.fromkeys(reasons))

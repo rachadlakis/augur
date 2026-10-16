@@ -11,17 +11,21 @@ import { Trades } from './pages/Trades'
 import { Assistant } from './pages/Assistant'
 import { Integrations } from './pages/Integrations'
 import { Safety } from './pages/Safety'
+import { Intel } from './pages/Intel'
+import { HowItWorks } from './pages/HowItWorks'
 
-type Page = 'overview' | 'markets' | 'positions' | 'trades' | 'assistant' | 'integrations' | 'safety'
+type Page = 'overview' | 'markets' | 'intel' | 'positions' | 'trades' | 'assistant' | 'integrations' | 'safety' | 'how'
 
 const NAV: { id: Page; label: string; icon: IconName }[] = [
   { id: 'overview', label: 'Overview', icon: 'overview' },
   { id: 'markets', label: 'Markets', icon: 'markets' },
+  { id: 'intel', label: 'News & whales', icon: 'intel' },
   { id: 'positions', label: 'Positions', icon: 'positions' },
   { id: 'trades', label: 'Trades', icon: 'trades' },
   { id: 'assistant', label: 'Assistant', icon: 'assistant' },
   { id: 'integrations', label: 'Integrations', icon: 'integrations' },
   { id: 'safety', label: 'Safety', icon: 'safety' },
+  { id: 'how', label: 'How it works', icon: 'how' },
 ]
 
 const CONNECTION: Record<Connection, { label: string; status: 'good' | 'warning' | 'critical' | 'neutral' }> = {
@@ -70,6 +74,8 @@ export default function App() {
 
   const content = () => {
     if (page === 'integrations') return <Integrations notify={notify} />
+    if (page === 'intel') return <Intel notify={notify} />
+    if (page === 'how') return <HowItWorks />
     if (page === 'markets') {
       return <Markets onConnect={() => go('integrations')} mode={health?.mode ?? portfolio?.mode ?? 'demo'} notify={notify} />
     }

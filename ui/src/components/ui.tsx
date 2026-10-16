@@ -27,6 +27,8 @@ const paths = {
   send: 'M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z',
   power: 'M12 2v10m6.4-6.4a9 9 0 1 1-12.8 0',
   refresh: 'M21 12a9 9 0 1 1-3-6.7L21 8m0-5v5h-5',
+  intel: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM2 12h20M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20z',
+  how: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zM9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14m0 3h.01',
 } as const
 
 export type IconName = keyof typeof paths

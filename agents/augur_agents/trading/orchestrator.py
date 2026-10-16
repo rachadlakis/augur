@@ -17,7 +17,16 @@ class OrchestratorConsensus:
     hit rates and each agent is weighted by its realized information
     coefficient. The consensus score itself is calibrated the same way under the
     `consensus` key, which yields `win_probability` for meta-label sizing.
+
+    Secondary agents (news sentiment by default) can confirm a direction or
+    veto it through conflict, but are never the deciding vote: the primary
+    evidence must clear the threshold on its own. News feeds and wallet flows
+    are the cheapest inputs for an attacker to fake (and the weakest evidence),
+    so they must not be what turns "sit out" into "trade".
     """
+
+    THRESHOLD = 0.25
+    SECONDARY_AGENTS = frozenset({"sentiment_news", "policy_news", "whale_flows"})
 
     _SIGNAL_STRENGTH = {
         "BUY": 1.0,
@@ -34,9 +43,11 @@ class OrchestratorConsensus:
         *,
         calibrator: SpecialistCalibrator | None = None,
         freshness_horizon_seconds: float = 3600.0,
+        secondary_agents: frozenset[str] | None = None,
     ) -> None:
         self.calibrator = calibrator
         self.freshness_horizon_seconds = freshness_horizon_seconds
+        self.secondary_agents = self.SECONDARY_AGENTS if secondary_agents is None else frozenset(secondary_agents)
 
     def _unit(self, value: Any, default: float) -> float:
         """Accept 0-1 floats, HIGH/MEDIUM/LOW labels, or a timestamp (decayed to freshness)."""
@@ -68,6 +79,7 @@ class OrchestratorConsensus:
             }
 
         weighted_total = 0.0
+        primary_total = 0.0
         conflict_penalty = 0.0
         active_buys = 0
         active_sells = 0
@@ -88,6 +100,8 @@ class OrchestratorConsensus:
             direction = self._SIGNAL_STRENGTH.get(signal, 0.0)
             weight = confidence * evidence_quality * data_freshness * agent_weight
             weighted_total += direction * weight
+            if agent not in self.secondary_agents:
+                primary_total += direction * weight
 
             if signal == "BUY" and weight > 0:
                 active_buys += 1
@@ -100,7 +114,11 @@ class OrchestratorConsensus:
         if active_buys and active_sells:
             conflict_penalty += 0.25
 
-        if abs(weighted_total) < 0.25 or conflict_penalty >= 0.35:
+        if abs(weighted_total) < self.THRESHOLD or conflict_penalty >= 0.35:
+            decision = "NO_TRADE"
+        elif abs(primary_total) < self.THRESHOLD or primary_total * weighted_total <= 0:
+            # Only secondary evidence (news) carried the score over the line,
+            # or it pulled the direction against the primary evidence.
             decision = "NO_TRADE"
         elif weighted_total > 0:
             decision = "BUY"
@@ -119,6 +137,7 @@ class OrchestratorConsensus:
         return {
             "decision": decision,
             "score": round(weighted_total, 4),
+            "primary_score": round(primary_total, 4),
             "conflict_penalty": round(conflict_penalty, 4),
             "reason": "weighted evidence after conflict penalty",
             "win_probability": win_probability,

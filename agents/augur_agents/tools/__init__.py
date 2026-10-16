@@ -14,12 +14,12 @@ Every tool follows the same contract, which the agents' instructions rely on:
   and return shapes those servers will expose.
 """
 
+from augur_agents.tools.crypto_research_tools import CRYPTO_RESEARCH_TOOLS
 from augur_agents.tools.dataset_tools import DATASET_TOOLS
 from augur_agents.tools.evaluation_tools import EVALUATION_TOOLS
 from augur_agents.tools.governance_tools import GOVERNANCE_TOOLS
 from augur_agents.tools.research_tools import RESEARCH_TOOLS
 from augur_agents.tools.training_tools import TRAINING_TOOLS
-from augur_agents.tools.crypto_research_tools import CRYPTO_RESEARCH_TOOLS
 
 __all__ = [
     "RESEARCH_TOOLS",

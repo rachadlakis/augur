@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 
@@ -109,6 +110,20 @@ class RiskManager:
         if risk_fraction is None:
             risk_fraction = self.max_risk_per_trade
         risk_fraction = min(risk_fraction, self.max_risk_per_trade)
+
+        numbers = {
+            "entry": entry, "stop": stop, "target": target, "account_equity": account_equity,
+            "exposure": exposure, "portfolio_exposure": portfolio_exposure,
+            "correlated_exposure": correlated_exposure, "daily_loss_used": daily_loss_used,
+            "spread": spread, "liquidity": liquidity, "risk_fraction": risk_fraction,
+        }
+        bad = sorted(name for name, value in numbers.items() if not math.isfinite(float(value)))
+        if bad:
+            # NaN compares False against every limit, so it would slip through them all.
+            return {
+                "allowed": False, "reasons": [f"non-finite inputs: {', '.join(bad)}"],
+                "position_notional": 0.0, "position_qty": 0.0,
+            }
 
         if entry <= 0 or stop <= 0:
             reasons.append("entry and stop must be positive")

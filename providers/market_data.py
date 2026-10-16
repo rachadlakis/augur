@@ -7,7 +7,12 @@ from datetime import datetime, timedelta, timezone
 
 from alpaca.data.enums import DataFeed
 from alpaca.data.historical import CryptoHistoricalDataClient, StockHistoricalDataClient
-from alpaca.data.requests import CryptoBarsRequest, CryptoLatestTradeRequest, StockBarsRequest, StockLatestTradeRequest
+from alpaca.data.requests import (
+    CryptoBarsRequest,
+    CryptoLatestTradeRequest,
+    StockBarsRequest,
+    StockLatestTradeRequest,
+)
 from alpaca.data.timeframe import TimeFrame
 
 from config import Settings

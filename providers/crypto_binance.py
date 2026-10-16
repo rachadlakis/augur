@@ -10,8 +10,14 @@ from binance.exceptions import BinanceAPIException
 
 from config import Settings
 from providers.base import (
-    ExecutionProvider, OrderRequest, OrderResult, OrderSide, OrderType,
-    AccountSnapshot, DataUnavailable, PositionSnapshot,
+    AccountSnapshot,
+    DataUnavailable,
+    ExecutionProvider,
+    OrderRequest,
+    OrderResult,
+    OrderSide,
+    OrderType,
+    PositionSnapshot,
 )
 
 # How far past the stop trigger the OCO's stop-limit leg may fill. A gap

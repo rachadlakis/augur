@@ -131,3 +131,56 @@ def test_alpaca_import_uses_real_prices(dash, state):
     assert state.positions["TSLA"]["pnl"] == pytest.approx(100.0)
     assert state.account_equity == pytest.approx(50200.0)  # broker equity reproduced, not double-counted
     assert state.demo_mode is False
+
+
+def test_kill_switch_keeps_the_book_when_the_broker_refuses(state):
+    """A failed broker flatten must not be booked as closed trades."""
+    from providers.base import OrderResult
+
+    class RefusingBroker:
+        def close_all_positions(self):
+            return [OrderResult("", "REJECTED", 0.0, None, raw_error="market closed")]
+
+    run(state.add_position("AAPL", 10, 100.0, "BUY"))
+    state.alpaca, state.demo_mode = RefusingBroker(), False
+    result = run(state.kill_switch("drill"))
+    assert result["closed"] == 0 and "market closed" in result["error"]
+    assert "AAPL" in state.positions and state.trades == []
+    assert state.halted
+
+
+def test_shorts_do_not_offset_longs_in_exposure(state):
+    run(state.add_position("AAPL", 10, 100.0, "BUY"))
+    run(state.add_position("XYZ", 10, 100.0, "SELL"))
+    assert state.net_position_value() == pytest.approx(0.0)
+    assert state.gross_position_value() == pytest.approx(2000.0)
+
+
+def test_refused_exit_is_retried_later_not_every_second(dash, state, monkeypatch):
+    calls = []
+
+    async def refuse(symbol, price, reason="manual_close"):
+        calls.append(symbol)
+        return {"success": False, "error": "broker down"}
+
+    async def scenario():
+        await state.add_position("AAPL", 10, 100.0, "BUY")
+        state.positions["AAPL"]["stop_price"] = 95.0
+        state.positions["AAPL"]["current_price"] = 94.0
+        monkeypatch.setattr(state, "close_position", refuse)
+        task = asyncio.create_task(dash.monitor_positions())
+        await asyncio.sleep(3.5)
+        task.cancel()
+
+    run(scenario())
+    assert calls == ["AAPL"]
+
+
+def test_malformed_websocket_message_does_not_drop_the_client(dash, state):
+    from fastapi.testclient import TestClient
+
+    with TestClient(dash.app).websocket_connect("/ws/dashboard") as ws:
+        ws.send_text("not json")
+        assert ws.receive_json()["type"] == "error"
+        ws.send_text('{"type": "command", "data": {"text": "show summary"}}')
+        assert ws.receive_json()["type"] == "command_response"

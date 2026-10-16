@@ -4,14 +4,70 @@ Augur Tensors is a planned agentic AI R&D and model-training platform. Its goal
 is to coordinate the full model lifecycle while keeping expensive, destructive,
 or public actions behind explicit policy and human approval.
 
-> **Status: pre-alpha.** Two parts exist today: the distributed-training kit in
-> [`dist_kit/`](dist_kit/), and the agent layer in [`agents/`](agents/) — five
-> ADK agents wired over A2A, with a lifecycle state machine and a code-enforced
-> approval gate ([`agents/README.md`](agents/README.md),
-> [`agents/AGENTS.md`](agents/AGENTS.md)). The agent layer's *tools* return
-> realistic mock data for now; the MCP capability servers, a real job manager,
-> the persistence schema, and the user-facing control plane shown below are
-> still the target architecture.
+> **Status: pre-alpha.** Two parts exist today:
+>
+> 1. **A multi-asset trading system with a web dashboard** (`src/`, `providers/`,
+>    `agents/augur_agents/trading/`, `ui/`): deterministic specialists, a
+>    consensus layer, a rule-based risk engine, bracketed orders through Alpaca
+>    (paper by default), politics/economics news and whale-flow intel. See
+>    [Trading dashboard](#trading-dashboard) below and the in-app **How it works**
+>    page.
+> 2. **The agent layer** in [`agents/`](agents/) — five ADK agents wired over A2A,
+>    with a lifecycle state machine and a code-enforced approval gate
+>    ([`agents/README.md`](agents/README.md)). Its *tools* return realistic mock
+>    data for now; the MCP capability servers, a real job manager, the
+>    persistence schema, and the control plane below are still the target
+>    architecture.
+>
+> The distributed-training kit (`dist_kit/`) referenced in older docs and in
+> `pyproject.toml` is not in this repository.
+
+## Trading dashboard
+
+```bash
+uv sync                                   # Python dependencies
+cp .env.example .env                      # add keys, or leave blank for demo mode
+uv run python src/dashboard_api.py        # API on http://127.0.0.1:8000
+npm --prefix ui install && npm --prefix ui run dev   # UI on http://localhost:5173
+```
+
+With no keys it runs a simulated demo book. With Alpaca **paper** keys it trades
+practice money. Live trading needs `TRADING_MODE=live`, `ALPACA_PAPER=false`
+*and* typing `REAL MONEY` on every order.
+
+How a trade happens (each step can say no):
+
+```mermaid
+graph LR
+    D["Data<br/>prices · macro · news · whale flows"] --> S["Specialists<br/>vote BUY / SELL / abstain"]
+    S --> C["Consensus<br/>±0.25, no conflict,<br/>news & whales can't decide"]
+    C --> R["Risk engine<br/>0.5%/trade · caps · 2% daily stop"]
+    R --> X["Execution checks<br/>spread · chase · rate limits · FOMC pause"]
+    X --> B["Bracketed order<br/>stop + target at the broker"]
+    B --> W["Watch & journal<br/>reconcile · exits · calibrate"]
+```
+
+| Page | What it shows |
+|---|---|
+| Markets | Live scan of crypto, gold, silver, oil and the S&P 500 with each specialist's vote and the reasons for "no trade" |
+| News & whales | Policy-uncertainty percentile, news tone by theme, last FOMC release, USDT/ETH exchange flows and the largest transfers |
+| Safety | Kill switch (flattens everything), halt/resume, the risk rules |
+| How it works | The pipeline step by step and a playground running the real consensus arithmetic |
+
+Data sources: Alpaca (prices, orders), FRED (real yields, policy uncertainty),
+GDELT (news tone, no key), the Federal Reserve press feed (no key), and a public
+Ethereum RPC node (whale flows, watch-only wallets, no key). The evidence behind
+each choice is in
+[`docs/RESEARCH_2026_10_STRATEGY_REVIEW.md`](docs/RESEARCH_2026_10_STRATEGY_REVIEW.md).
+
+Tests:
+
+```bash
+uv run pytest agents/tests tests          # ~350 tests, offline
+npm --prefix ui run build && npm --prefix ui run lint
+```
+
+## Agent platform (target architecture)
 
 The intended lifecycle is a straight pipeline, each stage gated by policy and
 human approval before the next one starts:
@@ -24,8 +80,6 @@ graph LR
     classDef step fill:#eef1f6,stroke:#7385a0,color:#1c1c1c
 ```
 
-See [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) for the staged
-build plan and acceptance criteria.
 
 ## Architecture decisions
 
@@ -82,7 +136,7 @@ graph TD
     M[("MCP tool servers<br/>research · dataset · training<br/>evaluation · registry · governance")]:::ext
 
     M --> EXT[("External APIs<br/>& datasets")]:::web
-    M --> JOB[("Job / compute service<br/>+ dist_kit workers")]:::web
+    M --> JOB[("Job / compute service<br/>+ training workers")]:::web
     M --> REG[("Artifact & model<br/>registry")]:::web
 
     classDef user fill:#f2f2f2,stroke:#8a8a8a,color:#1c1c1c
@@ -113,7 +167,7 @@ status/artifacts flowing back**.
   [MCP boundary](#mcp-boundary)).
 - **External APIs & datasets / Job or compute service / Artifact & model
   registry** — the systems MCP tools actually reach: source data and model
-  hubs, the GPU job backend (`dist_kit` workers today), and the model/dataset
+  hubs, the GPU job backend (planned), and the model/dataset
   registry a release publishes to.
 
 ### Planned agents
@@ -163,95 +217,43 @@ model release require approval tokens that are scoped to a concrete action.
 ## Current repository
 
 ```text
-mobius-tensors/
-|-- pyproject.toml         # uv workspace root
-|-- uv.lock                # one lock for the whole workspace
-|-- docs/
-|   |-- IMPLEMENTATION_PLAN.md
-|   `-- ultrascale_playbook.md   # distilled parallelism / cost reference
-|-- dist_kit/              # the distributed-training kit (copyable; own requirements.txt)
-|   |-- strategies.py      # solo, DDP, FSDP2, LoRA, QLoRA
-|   |-- checkpoint.py  data.py  train.py  launch.sh  tests/
-|   `-- ...
-`-- agents/                # the agent layer  (see agents/README.md)
-    |-- pyproject.toml     # workspace member "augur-agents"
-    |-- AGENTS.md
-    `-- augur_agents/
-        |-- config.py  contracts.py  lifecycle.py  registry.py
-        |-- a2a_server.py  a2a_client.py  callbacks.py  persistence.py
-        |-- tools/         # stub tool modules (stand in for the MCP servers)
-        `-- orchestrator/  research/  data/  training/  evaluation/
+augur/
+|-- pyproject.toml  uv.lock     # uv workspace root (member: agents/)
+|-- .env.example                # every key Augur can use; all optional
+|-- src/
+|   |-- dashboard_api.py        # FastAPI + WebSocket server behind the UI
+|   |-- config.py               # typed settings, live-trading safety check
+|   |-- integrations.py         # the Integrations page's registry
+|   `-- technical_indicators.py
+|-- providers/                  # broker / data adapters (no strategy logic)
+|   |-- base.py                 # ExecutionProvider contract, DataUnavailable
+|   |-- stocks_alpaca.py  crypto_binance.py  market_data.py
+|   |-- fred.py  news.py        # macro series; GDELT tone, EPU, Fed releases
+|   `-- wallets.py  whales.py   # watch-only balances; exchange whale flows
+|-- agents/augur_agents/
+|   |-- trading/                # specialists, consensus, risk, execution, guard,
+|   |                           # backtest, calibration, journal, monitor
+|   `-- orchestrator/ research/ data/ training/ evaluation/   # ADK agent layer
+|-- ui/                         # React + Vite dashboard
+|-- tests/                      # dashboard, providers, invariants, fake-news, black-box
+|-- agents/tests/               # agent layer and trading core
+|-- scripts/                    # setup wizard, demo, connection checks
+`-- docs/
+```
+
+## Agent layer setup
+
+```bash
+uv run pytest agents/tests                 # offline
+cp .env.example .env                       # fill in an LLM provider key
+uv run python -m augur_agents serve all    # the four worker A2A servers
+uv run adk api_server --with_ui --port 8000   --session_service_uri "sqlite:///augur_agents.db" agents/augur_agents/orchestrator
 ```
 
 Still architecture only: the MCP capability servers (`dataset-mcp`,
 `training-mcp`, `evaluation-mcp`, `governance-mcp`), a real job manager and
 scheduler, the workflow / approval / audit database schema, and the Safety and
 Release agents.
-
-## Distributed-training foundation
-
-[`dist_kit/README.md`](dist_kit/README.md) documents the existing kit in detail.
-It currently provides:
-
-- single-process, DistributedDataParallel (DDP), and FSDP2 strategies;
-- Hugging Face model loading and a text dataset path;
-- mixed precision, gradient checkpointing, LoRA, and QLoRA;
-- FSDP2 checkpoint save/resume using DCP or DTensor state-dict paths; and
-- CPU-oriented unit tests plus optional GPU smoke tests.
-
-It should become an internal worker library behind `training-mcp` and a job
-manager. Agents must not import it and start training in the agent server
-process. A worker should receive a validated `TrainingPlan`, launch an isolated
-`torchrun` subprocess or scheduler job, and report durable job state and artifact
-references.
-
-Known gaps to address before treating it as a production backend:
-
-- it is currently a single-node launcher rather than a multi-node scheduler;
-- the included data pipeline supports text columns only;
-- DDP/solo checkpoints do not yet persist complete optimizer/scheduler/run
-  state;
-- checkpoint writes need manifests, checksums, atomic completion markers, and
-  object-storage support;
-- job cancellation, retries, heartbeats, metric streaming, resource/cost
-  estimates, and failure recovery are not implemented;
-- importing `dist_kit` on Windows with a CUDA-visible PyTorch build currently
-  raises during test collection because NCCL is Linux-only; and
-- the existing test suite still needs validation on the pinned dependency set
-  and supported Linux/CUDA matrix.
-
-## Development setup
-
-The repo is a [uv](https://docs.astral.sh/uv/) workspace.
-
-```bash
-uv sync                     # control plane + the agent layer
-uv sync --group dist-kit    # + the training kit's dependencies
-```
-
-`torch` is not in the lock — its wheel depends on the target CUDA runtime — so
-install it separately for GPU training (the kit needs >= 2.6):
-
-```bash
-uv pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
-```
-
-**The agent layer** (no GPU, no torch needed):
-
-```bash
-uv run pytest agents/tests                 # offline
-cp .env.example .env                       # fill in an LLM provider key
-uv run python -m augur_agents serve all    # the four worker A2A servers
-uv run adk api_server --with_ui --port 8000 \n  --session_service_uri "sqlite:///augur_agents.db" agents/augur_agents/orchestrator
-```
-
-**The training kit:**
-
-```bash
-uv run pytest dist_kit/tests -m "not smoke"
-uv run pytest dist_kit/tests -m smoke      # downloads/cache and GPU may be required
-uv run python -m dist_kit                   # demo trainer (edit dist_kit/config.yaml first)
-```
 
 ## Human approval and governance
 

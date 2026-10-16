@@ -8,7 +8,6 @@ Read-only and advisory: informs trading decisions without executing them.
 
 from __future__ import annotations
 
-from a2a.types import AgentSkill
 from google.adk.agents import LlmAgent
 
 from augur_agents.a2a_server import build_skill

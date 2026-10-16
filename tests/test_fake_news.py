@@ -19,7 +19,6 @@ import random
 from datetime import datetime, timedelta, timezone
 
 import pytest
-
 from augur_agents.contracts import MarketSnapshot
 from augur_agents.trading.backtest import PaperTradingBacktester, simulate_bracket_exit
 from augur_agents.trading.pipeline import TradingPipeline
@@ -275,17 +274,6 @@ def test_pump_and_dump_with_fake_news_stays_inside_risk_limits(seed):
     assert attacked["worst_day"] <= 0.02 * EQUITY + MAX_NOTIONAL * 0.10 + 50
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "KNOWN VULNERABILITY: source labels are self-declared, so spoofed "
-        "'newswire'/'official' items get full credibility, and news (max weight "
-        "0.225) carries trades the technicals alone (max 0.175) never reach the "
-        "0.25 threshold for. Without news this market produces 0 trades; with the "
-        "fake feed, 12-16 trades at 0% win rate end at $86-89k. Remove this "
-        "marker once fixed."
-    ),
-)
 @pytest.mark.parametrize("seed", [7, 8, 9])
 def test_fake_news_does_not_drain_the_account(seed):
     bars = pump_and_dump_path(seed)
@@ -295,3 +283,18 @@ def test_fake_news_does_not_drain_the_account(seed):
     # strategy would sit out into a string of losing trades.
     assert attacked["capital"] >= EQUITY * 0.97
     assert attacked["orders"] <= baseline["orders"] + 3
+
+
+def test_news_confirms_but_never_casts_the_deciding_vote():
+    """Technicals alone below the line + maximal news on top = still no trade.
+    Technicals above the line + agreeing news = trade."""
+    from augur_agents.trading.orchestrator import OrchestratorConsensus
+
+    news = {"agent": "sentiment_news", "signal": "BUY", "confidence": 0.9, "evidence_quality": 1.0, "data_freshness": 1.0}
+    weak = {"agent": "technical", "signal": "BUY", "confidence": 0.7}  # 0.7 * 0.5 * 0.5 = 0.175
+    strong = {"agent": "technical", "signal": "BUY", "confidence": 0.7, "evidence_quality": 1.0, "data_freshness": 1.0}
+    consensus = OrchestratorConsensus()
+    assert consensus.synthesize([weak, news])["decision"] == "NO_TRADE"
+    assert consensus.synthesize([strong, news])["decision"] == "BUY"
+    # News pointing the other way is a conflict, not a reversal.
+    assert consensus.synthesize([strong, {**news, "signal": "SELL"}])["decision"] == "NO_TRADE"

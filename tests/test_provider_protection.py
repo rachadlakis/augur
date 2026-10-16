@@ -15,7 +15,6 @@ if SRC not in sys.path:
 
 from providers.base import OrderRequest, OrderSide, OrderType  # noqa: E402
 
-
 # --- Alpaca ---------------------------------------------------------------------------
 
 
@@ -36,6 +35,7 @@ class FakeAlpacaClient:
 @pytest.fixture
 def alpaca():
     from alpaca.trading.enums import OrderClass
+
     from providers.stocks_alpaca import AlpacaProvider
 
     provider = AlpacaProvider.__new__(AlpacaProvider)

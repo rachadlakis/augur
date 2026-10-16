@@ -13,7 +13,6 @@ import random
 from datetime import datetime, timedelta, timezone
 
 import pytest
-
 from augur_agents.contracts import MarketSnapshot
 from augur_agents.trading.backtest import PaperTradingBacktester, simulate_bracket_exit
 from augur_agents.trading.calibration import SpecialistCalibrator

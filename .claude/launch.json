@@ -1,0 +1,20 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "api-demo",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": [
+        "run", "python", "-c",
+        "import os, runpy; os.environ.update(ALPACA_API_KEY='', ALPACA_SECRET_KEY='', BINANCE_API_KEY='', BINANCE_API_SECRET=''); runpy.run_path('src/dashboard_api.py', run_name='__main__')"
+      ],
+      "port": 8000
+    },
+    {
+      "name": "ui",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "ui", "run", "dev"],
+      "port": 5173
+    }
+  ]
+}

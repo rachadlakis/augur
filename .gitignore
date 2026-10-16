@@ -10,3 +10,7 @@ venv/
 docs/agents
 # pytest scratch (sandbox temp-dir workaround)
 .pytest-tmp/
+
+# stale test logs
+test_output.txt
+.pytest_cache/

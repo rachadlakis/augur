@@ -3,8 +3,7 @@ Technical indicators for trading signals.
 Includes RSI, MACD, Moving Averages.
 """
 
-import math
-from typing import List, Dict, Tuple, Optional
+from typing import Dict, List, Optional, Tuple
 
 
 class TechnicalIndicators:

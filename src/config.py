@@ -8,8 +8,8 @@ Nothing here should ever be hard-coded or logged.
 from enum import Enum
 from pathlib import Path
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class TradingMode(str, Enum):
@@ -55,6 +55,8 @@ class Settings(BaseSettings):
     wallet_private_key: SecretStr = SecretStr("")
     wallet_rpc_url: str = ""
     watch_wallets: str = ""  # comma-separated public 0x addresses
+    # Extra exchange hot wallets for whale-flow tracking: "0xabc...=Label,0xdef...=Other"
+    exchange_wallets: str = ""
 
     # Trading dashboard
     initial_capital: float = 100000.0

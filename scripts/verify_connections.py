@@ -6,9 +6,9 @@ Usage: python verify_connections.py
 """
 
 from config import load_settings
+from providers.base import DataUnavailable
 from providers.crypto_binance import BinanceProvider
 from providers.stocks_alpaca import AlpacaProvider
-from providers.base import DataUnavailable
 
 
 def check_binance(settings) -> None:

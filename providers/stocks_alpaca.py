@@ -7,21 +7,33 @@ import math
 import time
 from typing import Any
 
-from alpaca.trading.client import TradingClient
-from alpaca.trading.requests import (
-    MarketOrderRequest, LimitOrderRequest, StopOrderRequest, StopLimitOrderRequest,
-    StopLossRequest, TakeProfitRequest, GetOrdersRequest,
-)
-from alpaca.trading.enums import OrderClass, OrderSide as AlpacaSide, QueryOrderStatus, TimeInForce
+from alpaca.common.exceptions import APIError
 from alpaca.data.enums import DataFeed
 from alpaca.data.historical import CryptoHistoricalDataClient, StockHistoricalDataClient
 from alpaca.data.requests import CryptoLatestTradeRequest, StockLatestTradeRequest
-from alpaca.common.exceptions import APIError
+from alpaca.trading.client import TradingClient
+from alpaca.trading.enums import OrderClass, QueryOrderStatus, TimeInForce
+from alpaca.trading.enums import OrderSide as AlpacaSide
+from alpaca.trading.requests import (
+    GetOrdersRequest,
+    LimitOrderRequest,
+    MarketOrderRequest,
+    StopLimitOrderRequest,
+    StopLossRequest,
+    StopOrderRequest,
+    TakeProfitRequest,
+)
 
 from config import Settings
 from providers.base import (
-    ExecutionProvider, OrderRequest, OrderResult, OrderSide, OrderType,
-    AccountSnapshot, DataUnavailable, PositionSnapshot,
+    AccountSnapshot,
+    DataUnavailable,
+    ExecutionProvider,
+    OrderRequest,
+    OrderResult,
+    OrderSide,
+    OrderType,
+    PositionSnapshot,
 )
 
 
