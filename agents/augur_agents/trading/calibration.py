@@ -14,6 +14,7 @@ from __future__ import annotations
 import bisect
 import math
 from collections import deque
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
@@ -95,6 +96,20 @@ class SpecialistCalibrator:
             return  # non-directional signals carry no testable claim
         history = self._outcomes.setdefault(agent, deque(maxlen=self.window))
         history.append(_Outcome(float(confidence), direction, float(forward_return)))
+        self._fits.pop(agent, None)
+
+    def load(self, agent: str, outcomes: Iterable[tuple[str, float, float]]) -> None:
+        """Replace an agent's history with (signal, confidence, forward_return) rows, oldest first.
+
+        The new history is swapped in with one assignment, so a concurrent
+        reader sees either the old record or the new one, never half of it.
+        """
+        history: deque[_Outcome] = deque(maxlen=self.window)
+        for signal, confidence, forward_return in outcomes:
+            direction = _DIRECTION.get(str(signal).upper())
+            if direction is not None:
+                history.append(_Outcome(float(confidence), direction, float(forward_return)))
+        self._outcomes[agent] = history
         self._fits.pop(agent, None)
 
     def samples(self, agent: str) -> int:

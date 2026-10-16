@@ -22,14 +22,18 @@ import asyncio
 import json
 import logging
 import math
+import os
 import random
 import re
 from collections import deque
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 
+from alpaca.data.timeframe import TimeFrame
+from augur_agents.trading import signal_validation
+from augur_agents.trading.calibration import SpecialistCalibrator
 from augur_agents.trading.journal import TradeJournal
 from augur_agents.trading.markets import UNIVERSE, snapshot_from_bars
 from augur_agents.trading.monitor import PositionMonitor
@@ -51,6 +55,15 @@ from providers.stocks_alpaca import AlpacaProvider
 from technical_indicators import SignalDetector, TechnicalIndicators
 
 logger = logging.getLogger(__name__)
+
+# Local state the dashboard accumulates (git-ignored). Tests point this elsewhere.
+DATA_DIR = Path(os.environ.get("AUGUR_DATA_DIR") or _ROOT / "data")
+
+# Forward validation of the secondary signals: every intel refresh is stored,
+# scored once its horizon passes, and the scores calibrate every pipeline the
+# dashboard builds. Loaded from the store at startup.
+signal_store = signal_validation.SignalStore(DATA_DIR / "signal_validation.sqlite3")
+signal_calibrator = SpecialistCalibrator()
 
 # ============================================================================
 # Data Models for API
@@ -196,7 +209,7 @@ class TradingState:
     def __init__(self, settings: Optional[Settings] = None, *, connect_broker: bool = True):
         # load_settings() enforces the live-trading safety check; Settings() alone skips it.
         self.settings = settings or load_settings()
-        self.pipeline = TradingPipeline()
+        self.pipeline = TradingPipeline(calibrator=signal_calibrator)
         self.journal = TradeJournal()
         self.monitor = PositionMonitor()
 
@@ -926,7 +939,8 @@ def scan_instrument(
     exposure = position['quantity'] * position['current_price'] / equity if position else 0.0
 
     # A fresh pipeline per instrument: a scan must not consume the live rate limits.
-    result = TradingPipeline().evaluate(
+    # The shared calibrator only carries measured skill, never rate-limit state.
+    result = TradingPipeline(calibrator=signal_calibrator).evaluate(
         market_snapshot=snapshot, account_equity=equity, exposure=exposure,
         portfolio_exposure=trading_state.gross_position_value() / equity,
         daily_loss_used=_today_loss_fraction(), spread=snapshot.spread, expected_slippage=0.0005,
@@ -1014,6 +1028,34 @@ async def refresh_intel() -> None:
             ),
         )
         _intel.update(news=news_ctx, whales=whale_flows, refreshed_at=datetime.now().isoformat())
+        try:
+            await asyncio.to_thread(record_intel_signals, news_ctx, whale_flows)
+        except Exception as e:  # validation bookkeeping must never break the live feed
+            logger.warning(f"Could not record intel signals: {e}")
+
+
+def record_intel_signals(news_ctx: Optional[Dict[str, Any]], whale_flows: Optional[Dict[str, Any]]) -> int:
+    """Persist this refresh's raw readings and analyst calls for forward validation."""
+    signals = signal_validation.intel_signals(news_ctx, whale_flows)
+    return signal_store.record(signals, raw={"news": news_ctx, "whales": whale_flows})
+
+
+def score_intel_signals() -> int:
+    """Attach realized returns to signals whose horizon has passed, then refresh the calibrator.
+
+    Needs Alpaca market data; without it signals simply wait. Returns how many were scored.
+    """
+    if not _integration_configured("alpaca"):
+        return 0
+    data = AlpacaMarketData(trading_state.settings)
+
+    def fetch(symbol: str, since: datetime) -> List[Dict[str, Any]]:
+        return data.bars(symbol, TimeFrame.Hour, datetime.now(timezone.utc) - since)
+
+    scored = signal_validation.score_pending(signal_store, fetch)
+    if scored:
+        signal_validation.load_calibrator(signal_store, signal_calibrator)
+    return len(scored)
 
 
 def intel_view() -> Dict[str, Any]:
@@ -1042,12 +1084,25 @@ async def get_intel(refresh: bool = False):
     return intel_view()
 
 
+@app.get("/api/intel/validation")
+async def get_signal_validation():
+    """How the secondary signals have scored against realized returns, per horizon."""
+    return await asyncio.to_thread(signal_validation.validation_report, signal_store,
+                                   min_samples=signal_calibrator.min_samples)
+
+
 async def intel_loop():
     while True:
         try:
             await refresh_intel()
         except Exception as e:
             logger.warning(f"Intel refresh failed: {e}")
+        try:
+            scored = await asyncio.to_thread(score_intel_signals)
+            if scored:
+                logger.info(f"Scored {scored} intel signals against realized returns")
+        except Exception as e:
+            logger.warning(f"Intel signal scoring failed: {e}")
         await asyncio.sleep(INTEL_REFRESH_SECONDS)
 
 
@@ -1619,6 +1674,11 @@ _background_tasks: List[asyncio.Task] = []
 async def startup_event():
     """Initialize on app startup"""
     logger.info("Dashboard API starting up...")
+
+    try:
+        await asyncio.to_thread(signal_validation.load_calibrator, signal_store, signal_calibrator)
+    except Exception as e:
+        logger.warning(f"Could not load signal calibration history: {e}")
 
     # Keep references: the event loop holds tasks only weakly, so an
     # unreferenced background loop can be garbage-collected mid-run.

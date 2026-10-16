@@ -53,3 +53,7 @@ if not _default_tmp_is_usable():
     tempfile.tempdir = str(_local)
     for _var in ("TMPDIR", "TEMP", "TMP", "PYTEST_DEBUG_TEMPROOT"):
         os.environ[_var] = str(_local)
+
+# The dashboard writes its signal-validation store under AUGUR_DATA_DIR; keep
+# test runs out of the real data/ folder.
+os.environ.setdefault("AUGUR_DATA_DIR", tempfile.mkdtemp(prefix="augur-data-"))
