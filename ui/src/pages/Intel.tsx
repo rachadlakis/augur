@@ -220,7 +220,7 @@ export function Intel({ notify }: { notify: (kind: ToastKind, message: string) =
         </p>
         <div className="row">
           {intel?.refreshed_at && <span className="muted small">Updated {ago(intel.refreshed_at)}</span>}
-          <button className="btn" onClick={() => void load(true)} disabled={loading}>
+          <button className="btn ghost" onClick={() => void load(true)} disabled={loading}>
             <Icon name="refresh" size={16} /> {loading ? 'Loading… (up to a minute)' : 'Refresh'}
           </button>
         </div>
